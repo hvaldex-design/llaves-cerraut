@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Cada usuario solo puede leer y escribir DENTRO de su propia carpeta.
+    // Nadie más (ni siquiera otro usuario logueado) puede ver tus datos.
+    match /usuarios/{userId}/{coleccion}/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
