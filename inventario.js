@@ -4,6 +4,8 @@
 import { addItem, updateItem, deleteItem } from "./firebase.js";
 import { formatCLP, escapeHtml, showToast } from "./helpers.js";
 
+export const CATEGORIAS = ["Control remoto", "Espadín", "Llave virgen", "Batería / Pila", "Carcasa", "Otro"];
+
 export function renderInventarioView(state) {
   const { inventario } = state;
 
@@ -53,6 +55,7 @@ export function renderInventarioView(state) {
 
 export function renderProductoForm(producto = null) {
   const p = producto || {};
+  const categoriaActual = p.categoria || CATEGORIAS[0];
   return `
     <div class="sheet-handle"></div>
     <div class="sheet-header">
@@ -62,17 +65,27 @@ export function renderProductoForm(producto = null) {
     <form id="form-producto">
       <div class="field">
         <label>Nombre del producto</label>
-        <input name="nombre" placeholder="Llave virgen H chip" value="${escapeHtml(p.nombre || "")}" required>
+        <input name="nombre" placeholder="Xhorse XNDS00EN" value="${escapeHtml(p.nombre || "")}" required>
       </div>
       <div class="field-row">
         <div class="field">
           <label>Categoría</label>
-          <input name="categoria" placeholder="Llave virgen, control, batería..." value="${escapeHtml(p.categoria || "")}">
+          <select name="categoria" id="select-categoria">
+            ${CATEGORIAS.map((c) => `<option value="${c}" ${categoriaActual === c ? "selected" : ""}>${c}</option>`).join("")}
+          </select>
         </div>
         <div class="field">
           <label>Compatible con</label>
           <input name="compatibilidad" placeholder="Toyota / Lexus" value="${escapeHtml(p.compatibilidad || "")}">
         </div>
+      </div>
+      <div class="field hidden" id="campo-usa-pila">
+        <label>¿Este control usa pila CR2032?</label>
+        <div class="segmented" id="usaPila-segmented">
+          <button type="button" data-val="si" class="${p.usaPila ? "active" : ""}">Sí</button>
+          <button type="button" data-val="no" class="${!p.usaPila ? "active" : ""}">No</button>
+        </div>
+        <input type="hidden" name="usaPila" id="usaPila-hidden" value="${p.usaPila ? "si" : "no"}">
       </div>
       <div class="field-row">
         <div class="field">
@@ -121,6 +134,7 @@ export function renderProductoDetail(p) {
 
     <div class="kv-row"><span class="kv-label">Producto</span><span class="kv-value">${escapeHtml(p.nombre)}</span></div>
     <div class="kv-row"><span class="kv-label">Categoría</span><span class="kv-value">${escapeHtml(p.categoria || "—")}</span></div>
+    ${p.categoria === "Control remoto" ? `<div class="kv-row"><span class="kv-label">¿Usa pila CR2032?</span><span class="kv-value">${p.usaPila ? "Sí" : "No"}</span></div>` : ""}
     <div class="kv-row"><span class="kv-label">Compatible con</span><span class="kv-value">${escapeHtml(p.compatibilidad || "—")}</span></div>
     <div class="kv-row"><span class="kv-label">Stock actual</span><span class="kv-value mono">${p.stock}</span></div>
     <div class="kv-row"><span class="kv-label">Stock mínimo</span><span class="kv-value mono">${p.stockMinimo ?? 0}</span></div>
@@ -149,6 +163,7 @@ export function readProductoForm(form) {
     nombre: fd.get("nombre")?.trim() || "",
     categoria: fd.get("categoria")?.trim() || "",
     compatibilidad: fd.get("compatibilidad")?.trim() || "",
+    usaPila: fd.get("usaPila") === "si",
     stock: Number(fd.get("stock")) || 0,
     stockMinimo: Number(fd.get("stockMinimo")) || 0,
     costoUnitario: Number(fd.get("costoUnitario")) || 0,
@@ -175,4 +190,12 @@ export async function deleteProducto(uidUser, id) {
 export async function adjustStock(uidUser, producto, delta) {
   const nuevoStock = Math.max(0, Number(producto.stock) + delta);
   await updateItem(uidUser, "inventario", producto.id, { stock: nuevoStock });
+}
+
+// Descuenta 1 unidad de stock de un producto por su id (usado al crear un trabajo)
+export async function descontarStockPorId(uidUser, inventario, productoId) {
+  const producto = inventario.find((p) => p.id === productoId);
+  if (!producto) return;
+  const nuevoStock = Math.max(0, Number(producto.stock) - 1);
+  await updateItem(uidUser, "inventario", productoId, { stock: nuevoStock });
 }

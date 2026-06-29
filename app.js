@@ -1,11 +1,13 @@
 // ============================================================
 // app.js — núcleo de la aplicación
 // ============================================================
-import { auth, loginWithGoogle, logout, watchAuth, watchCollection } from "./firebase.js";
+import { auth, loginWithGoogle, logout, watchAuth, watchCollection, updateItem } from "./firebase.js";
+import { uploadMedia } from "./cloudinary.js";
 import { showToast } from "./helpers.js";
 import {
   renderTrabajosView, renderTrabajoForm, renderTrabajoDetail,
-  readTrabajoForm, saveTrabajo, deleteTrabajo, addMediaToTrabajo
+  readTrabajoForm, saveTrabajo, saveTrabajoYDevolverId, deleteTrabajo, addMediaToTrabajo,
+  removeMediaFromTrabajo, calcularCostoAutomatico
 } from "./trabajos.js";
 import {
   renderPagosView, renderPagoForm, readPagoForm, savePago, deletePago
@@ -141,6 +143,19 @@ function renderCurrentView() {
   }
 }
 
+// ---------------- Helpers de creación de trabajo con media ----------------
+
+async function uploadMediaWrapper(file, onProgress) {
+  return uploadMedia(file, onProgress);
+}
+
+async function saveTrabajoConMedia(uidUser, data, inventario, mediaLocal) {
+  const newId = await saveTrabajoYDevolverId(uidUser, data, inventario);
+  if (mediaLocal.length) {
+    await updateItem(uidUser, "trabajos", newId, { media: mediaLocal });
+  }
+}
+
 // ---------------- Sheets (modales inferiores) ----------------
 
 function openSheet(type, id = null) {
@@ -173,13 +188,90 @@ function renderSheet() {
 
   if (type === "trabajo-form") {
     const trabajo = id ? state.trabajos.find((t) => t.id === id) : null;
-    content.innerHTML = renderTrabajoForm(trabajo);
+    // Mientras se crea/edita, mantenemos una copia local de media para poder agregar/quitar antes de guardar
+    const mediaLocal = trabajo ? [...(trabajo.media || [])] : [];
+    content.innerHTML = renderTrabajoForm(trabajo, state.inventario);
     bindCloseButtons();
+
+    const selectControl = document.getElementById("select-control");
+    const selectEspadin = document.getElementById("select-espadin");
+    const selectTipoServicio = document.getElementById("select-tipo-servicio");
+    const inputPincode = document.getElementById("input-pincode");
+    const inputCostoTotal = document.getElementById("input-costo-total");
+
+    function recalcularCosto() {
+      const opcionControl = selectControl.selectedOptions[0];
+      const controlCosto = opcionControl ? Number(opcionControl.dataset.costo || 0) : 0;
+      const controlUsaPila = opcionControl ? opcionControl.dataset.pila === "1" : false;
+      const espadinSeleccionado = !!selectEspadin.value;
+      const total = calcularCostoAutomatico({
+        tipoServicio: selectTipoServicio.value,
+        controlCosto,
+        controlUsaPila: selectControl.value ? controlUsaPila : false,
+        espadinSeleccionado,
+        pincode: inputPincode.value
+      });
+      inputCostoTotal.value = total;
+    }
+
+    [selectControl, selectEspadin, selectTipoServicio, inputPincode].forEach((el) => {
+      el.addEventListener("input", recalcularCosto);
+      el.addEventListener("change", recalcularCosto);
+    });
+    if (!trabajo) recalcularCosto(); // valor inicial al crear un trabajo nuevo
+
+    function renderMediaTiles() {
+      const grid = content.querySelector(".media-grid");
+      const tilesHtml = mediaLocal.map((m, i) => `
+        <div class="media-thumb ${m.type === "video" ? "is-video" : ""}">
+          <img src="${m.thumbUrl || m.url}" alt="">
+          <button type="button" class="media-remove-btn" data-remove-local="${i}"><i class="ti ti-x"></i></button>
+        </div>
+      `).join("");
+      grid.querySelectorAll(".media-thumb").forEach((el) => el.remove());
+      grid.insertAdjacentHTML("afterbegin", tilesHtml);
+      grid.querySelectorAll("[data-remove-local]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          mediaLocal.splice(Number(btn.dataset.removeLocal), 1);
+          renderMediaTiles();
+        });
+      });
+    }
+    renderMediaTiles();
+
+    const mediaInput = document.getElementById("media-input");
+    const tile = document.getElementById("media-upload-tile");
+    mediaInput.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        tile.classList.add("uploading");
+        tile.querySelector("span").textContent = "Subiendo...";
+        try {
+          const result = await uploadMediaWrapper(file, (pct) => {
+            tile.querySelector("span").textContent = pct + "%";
+          });
+          mediaLocal.push(result);
+          renderMediaTiles();
+        } catch (err) {
+          showToast(err.message || "No se pudo subir el archivo.", "error");
+        } finally {
+          tile.classList.remove("uploading");
+          tile.querySelector("span").textContent = "Agregar";
+        }
+      }
+      mediaInput.value = "";
+    });
+
     document.getElementById("form-trabajo").addEventListener("submit", async (e) => {
       e.preventDefault();
       const data = readTrabajoForm(e.target);
       try {
-        await saveTrabajo(state.user.uid, data, trabajo?.id || null);
+        if (trabajo?.id) {
+          await saveTrabajo(state.user.uid, data, state.inventario, trabajo.id, mediaLocal);
+        } else {
+          // Crear primero el trabajo (esto descuenta stock), luego guardar la media local
+          await saveTrabajoConMedia(state.user.uid, data, state.inventario, mediaLocal);
+        }
         closeSheet();
       } catch (err) {
         showToast("No se pudo guardar el trabajo.", "error");
@@ -199,6 +291,17 @@ function renderSheet() {
         await deleteTrabajo(state.user.uid, trabajo.id);
         closeSheet();
       }
+    });
+
+    content.querySelectorAll("[data-remove-media-detail]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm("¿Eliminar esta foto/video?")) return;
+        const index = Number(btn.dataset.removeMediaDetail);
+        const updatedMedia = await removeMediaFromTrabajo(state.user.uid, trabajo, index);
+        trabajo.media = updatedMedia;
+        openSheet("trabajo-detail", trabajo.id);
+      });
     });
 
     const mediaInput = document.getElementById("media-input");
@@ -261,6 +364,25 @@ function renderSheet() {
     const producto = id ? state.inventario.find((p) => p.id === id) : null;
     content.innerHTML = renderProductoForm(producto);
     bindCloseButtons();
+
+    const selectCategoria = document.getElementById("select-categoria");
+    const campoUsaPila = document.getElementById("campo-usa-pila");
+    const usaPilaButtons = content.querySelectorAll("#usaPila-segmented button");
+    const usaPilaHidden = document.getElementById("usaPila-hidden");
+
+    function syncCategoriaUI() {
+      campoUsaPila.classList.toggle("hidden", selectCategoria.value !== "Control remoto");
+    }
+    syncCategoriaUI();
+    selectCategoria.addEventListener("change", syncCategoriaUI);
+
+    usaPilaButtons.forEach((b) => {
+      b.addEventListener("click", () => {
+        usaPilaButtons.forEach((x) => x.classList.toggle("active", x === b));
+        usaPilaHidden.value = b.dataset.val;
+      });
+    });
+
     document.getElementById("form-producto").addEventListener("submit", async (e) => {
       e.preventDefault();
       const data = readProductoForm(e.target);
