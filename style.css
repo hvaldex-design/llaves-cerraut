@@ -716,3 +716,29 @@ label {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001s !important; }
 }
+
+/* ---------- Buscador ---------- */
+.search-box {
+  position: relative;
+  margin-bottom: 14px;
+}
+
+.search-box i {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 17px;
+  pointer-events: none;
+}
+
+.search-box input {
+  padding-left: 40px;
+  border-radius: var(--radius);
+  font-size: 15px;
+}
+
+.search-box input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}

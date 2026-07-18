@@ -5,6 +5,7 @@ import { addItem, updateItem, deleteItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
 import { formatCLP, formatDate, escapeHtml, showToast, todayInputValue } from "./helpers.js";
 import { descontarStockPorId } from "./inventario.js";
+import { ESPADINES_CATALOGO } from "./espadines.js";
 
 export const TIPOS_SERVICIO = ["Duplicado", "Pérdida de llaves", "Llave simple", "Apertura"];
 
@@ -26,12 +27,13 @@ export function renderTrabajosView(state) {
   }
 
   const cards = trabajos.map((t) => `
-    <div class="card" data-open-trabajo="${t.id}">
+    <div class="card trabajo-card" data-open-trabajo="${t.id}"
+         data-search="${escapeHtml((t.vehiculoMarca+" "+t.vehiculoModelo+" "+(t.vehiculoAnio||"")+" "+(t.cliente||"")+" "+(t.tipoServicio||"")+" "+(t.tipoControl||"")).toLowerCase())}">
       <div class="card-row">
         <div>
           <p class="card-title">${escapeHtml(t.vehiculoMarca)} ${escapeHtml(t.vehiculoModelo)} ${t.vehiculoAnio ? "· " + escapeHtml(t.vehiculoAnio) : ""}</p>
           <p class="card-meta">${escapeHtml(t.cliente || "Sin cliente")}</p>
-          <p class="card-meta">${escapeHtml(t.tipoServicio || "")}</p>
+          <p class="card-meta">${escapeHtml(t.tipoServicio || "")} ${t.tipoControl ? "· " + escapeHtml(t.tipoControl) : ""}</p>
         </div>
         <span class="card-amount positive">${formatCLP(t.precioCobrado)}</span>
       </div>
@@ -41,7 +43,15 @@ export function renderTrabajosView(state) {
   return `
     <div class="view-title">Trabajos</div>
     <div class="view-subtitle">${trabajos.length} trabajo${trabajos.length === 1 ? "" : "s"} registrado${trabajos.length === 1 ? "" : "s"}</div>
-    ${cards}
+    <div class="search-box">
+      <i class="ti ti-search"></i>
+      <input type="search" id="buscar-trabajo" placeholder="Buscar vehículo, cliente, servicio..." autocomplete="off">
+    </div>
+    <div id="trabajos-lista">${cards}</div>
+    <div id="sin-resultados" class="empty hidden">
+      <i class="ti ti-search-off"></i>
+      <p>No se encontraron trabajos.</p>
+    </div>
   `;
 }
 
@@ -62,14 +72,14 @@ export function calcularCostoAutomatico({ tipoServicio, controlCosto, controlUsa
 export function renderTrabajoForm(trabajo = null, inventario = []) {
   const t = trabajo || {};
   const controles = inventario.filter((p) => p.categoria === "Control remoto");
-  const espadines = inventario.filter((p) => p.categoria === "Espadín");
 
   const opcionesControl = controles.map((c) =>
     `<option value="${c.id}" data-costo="${c.costoUnitario || 0}" data-pila="${c.usaPila ? "1" : "0"}" ${t.controlId === c.id ? "selected" : ""}>${escapeHtml(c.nombre)} — ${formatCLP(c.costoUnitario)}</option>`
   ).join("");
 
-  const opcionesEspadin = espadines.map((e) =>
-    `<option value="${e.id}" ${t.espadinId === e.id ? "selected" : ""}>${escapeHtml(e.nombre)}</option>`
+  // Espadines del catálogo, con su compatibilidad
+  const opcionesEspadin = ESPADINES_CATALOGO.map((e) =>
+    `<option value="${e.codigo}" ${t.espadinCodigo === e.codigo || t.espadinId === e.codigo ? "selected" : ""}>${escapeHtml(e.codigo)} — ${escapeHtml(e.marcas)}</option>`
   ).join("");
 
   const media = t.media || [];
@@ -131,8 +141,8 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
       </div>
 
       <div class="field">
-        <label>Espadín <span style="color:var(--text-muted)">(opcional)</span></label>
-        <select name="espadinId" id="select-espadin">
+        <label>Espadín <span style="color:var(--text-muted)">(opcional — +$300 automático)</span></label>
+        <select name="espadinCodigo" id="select-espadin">
           <option value="">Sin espadín</option>
           ${opcionesEspadin}
         </select>
@@ -171,7 +181,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
           <label class="media-upload-tile" id="media-upload-tile">
             <i class="ti ti-camera-plus"></i>
             <span>Agregar</span>
-            <input type="file" id="media-input" accept="image/*,video/*" multiple capture="environment" style="display:none">
+            <input type="file" id="media-input" accept="image/*,video/*" multiple style="display:none">
           </label>
         </div>
       </div>
@@ -223,7 +233,7 @@ export function renderTrabajoDetail(trabajo) {
       <label class="media-upload-tile" id="media-upload-tile">
         <i class="ti ti-camera-plus"></i>
         <span>Agregar</span>
-        <input type="file" id="media-input" accept="image/*,video/*" multiple capture="environment" style="display:none">
+        <input type="file" id="media-input" accept="image/*,video/*" multiple style="display:none">
       </label>
     </div>
 
@@ -246,7 +256,8 @@ export function readTrabajoForm(form) {
     tipoServicio: fd.get("tipoServicio") || TIPOS_SERVICIO[0],
     sistema: fd.get("sistema")?.trim() || "",
     controlId: fd.get("controlId") || "",
-    espadinId: fd.get("espadinId") || "",
+    espadinCodigo: fd.get("espadinCodigo") || "",
+    espadinId: "",
     pincode: Number(fd.get("pincode")) || 0,
     costoTotal: Number(fd.get("costoTotal")) || 0,
     precioCobrado: Number(fd.get("precioCobrado")) || 0,

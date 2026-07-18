@@ -89,7 +89,7 @@ function renderApp() {
     <nav class="bottomnav">
       <div class="bottomnav-inner">
         <button class="navbtn" data-view="trabajos"><i class="ti ti-key"></i>Trabajos</button>
-        <button class="navbtn" data-view="pagos"><i class="ti ti-receipt"></i>Pagos</button>
+        <button class="navbtn" data-view="pagos"><i class="ti ti-chart-bar"></i>Finanzas</button>
         <button class="navbtn" data-view="inventario"><i class="ti ti-box"></i>Stock</button>
       </div>
     </nav>
@@ -130,6 +130,22 @@ function renderCurrentView() {
     container.querySelectorAll("[data-open-trabajo]").forEach((card) => {
       card.addEventListener("click", () => openSheet("trabajo-detail", card.dataset.openTrabajo));
     });
+    // Buscador
+    const buscarInput = document.getElementById("buscar-trabajo");
+    if (buscarInput) {
+      buscarInput.addEventListener("input", () => {
+        const q = buscarInput.value.toLowerCase().trim();
+        const cards = container.querySelectorAll(".trabajo-card");
+        let visible = 0;
+        cards.forEach(c => {
+          const match = !q || c.dataset.search.includes(q);
+          c.classList.toggle("hidden", !match);
+          if (match) visible++;
+        });
+        const sinRes = document.getElementById("sin-resultados");
+        if (sinRes) sinRes.classList.toggle("hidden", visible > 0 || !q);
+      });
+    }
   } else if (state.view === "pagos") {
     container.innerHTML = renderPagosView(state);
     container.querySelectorAll("[data-open-pago]").forEach((card) => {
@@ -203,7 +219,7 @@ function renderSheet() {
       const opcionControl = selectControl.selectedOptions[0];
       const controlCosto = opcionControl ? Number(opcionControl.dataset.costo || 0) : 0;
       const controlUsaPila = opcionControl ? opcionControl.dataset.pila === "1" : false;
-      const espadinSeleccionado = !!selectEspadin.value;
+      const espadinSeleccionado = !!selectEspadin.value;  // cualquier espadín suma $300
       const total = calcularCostoAutomatico({
         tipoServicio: selectTipoServicio.value,
         controlCosto,
@@ -331,23 +347,6 @@ function renderSheet() {
     content.innerHTML = renderPagoForm(state.trabajos, pago);
     bindCloseButtons();
 
-    const tipoButtons = content.querySelectorAll("#tipo-segmented button");
-    const tipoHidden = document.getElementById("tipo-hidden");
-    const estadoField = document.getElementById("estadoPago-field");
-    const trabajoField = document.getElementById("trabajo-field");
-
-    function syncTipoUI(tipo) {
-      tipoButtons.forEach((b) => b.classList.toggle("active", b.dataset.tipo === tipo));
-      tipoHidden.value = tipo;
-      estadoField.classList.toggle("hidden", tipo === "gasto");
-      trabajoField.classList.toggle("hidden", tipo === "gasto");
-    }
-    syncTipoUI(tipoHidden.value);
-
-    tipoButtons.forEach((b) => {
-      b.addEventListener("click", () => syncTipoUI(b.dataset.tipo));
-    });
-
     document.getElementById("form-pago").addEventListener("submit", async (e) => {
       e.preventDefault();
       const data = readPagoForm(e.target);
@@ -355,7 +354,7 @@ function renderSheet() {
         await savePago(state.user.uid, data, pago?.id || null);
         closeSheet();
       } catch (err) {
-        showToast("No se pudo guardar el movimiento.", "error");
+        showToast("No se pudo guardar el gasto.", "error");
       }
     });
   }
