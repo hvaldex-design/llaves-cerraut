@@ -32,10 +32,9 @@ export function renderTrabajosView(state) {
       <div class="card-row">
         <div>
           <p class="card-title">${escapeHtml(t.vehiculoMarca)} ${escapeHtml(t.vehiculoModelo)} ${t.vehiculoAnio ? "· " + escapeHtml(t.vehiculoAnio) : ""}</p>
-          <p class="card-meta">${escapeHtml(t.cliente || "Sin cliente")}</p>
           <p class="card-meta">${escapeHtml(t.tipoServicio || "")} ${t.tipoControl ? "· " + escapeHtml(t.tipoControl) : ""}</p>
+          <p class="card-meta" style="color:var(--text-muted);font-size:12px;">${t.fecha ? formatDate(t.fecha) : "Sin fecha"}</p>
         </div>
-        <span class="card-amount positive">${formatCLP(t.precioCobrado)}</span>
       </div>
     </div>
   `).join("");
@@ -132,6 +131,17 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
         <input name="sistema" placeholder="Texas DST80, 4D60, etc." value="${escapeHtml(t.sistema || "")}">
       </div>
 
+      <div class="field-row">
+        <div class="field">
+          <label>FCC ID</label>
+          <input name="fccId" placeholder="Ej: M3N-40821302" value="${escapeHtml(t.fccId || "")}">
+        </div>
+        <div class="field">
+          <label>Frecuencia</label>
+          <input name="frecuencia" placeholder="Ej: 433.92 MHz" value="${escapeHtml(t.frecuencia || "")}">
+        </div>
+      </div>
+
       <div class="field">
         <label>Tipo de control <span style="color:var(--text-muted)">(opcional)</span></label>
         <select name="controlId" id="select-control">
@@ -217,6 +227,8 @@ export function renderTrabajoDetail(trabajo) {
     <div class="kv-row"><span class="kv-label">Vehículo</span><span class="kv-value">${escapeHtml(t.vehiculoMarca)} ${escapeHtml(t.vehiculoModelo)} ${t.vehiculoAnio ? "(" + escapeHtml(t.vehiculoAnio) + ")" : ""}</span></div>
     <div class="kv-row"><span class="kv-label">Servicio</span><span class="kv-value">${escapeHtml(t.tipoServicio || "—")}</span></div>
     <div class="kv-row"><span class="kv-label">Sistema</span><span class="kv-value">${escapeHtml(t.sistema || "—")}</span></div>
+    <div class="kv-row"><span class="kv-label">FCC ID</span><span class="kv-value mono">${escapeHtml(t.fccId || "—")}</span></div>
+    <div class="kv-row"><span class="kv-label">Frecuencia</span><span class="kv-value">${escapeHtml(t.frecuencia || "—")}</span></div>
     <div class="kv-row"><span class="kv-label">Fecha</span><span class="kv-value">${formatDate(t.fecha)}</span></div>
 
     <div class="detail-section-title">Costos</div>
@@ -255,6 +267,8 @@ export function readTrabajoForm(form) {
     vehiculoAnio: fd.get("vehiculoAnio")?.trim() || "",
     tipoServicio: fd.get("tipoServicio") || TIPOS_SERVICIO[0],
     sistema: fd.get("sistema")?.trim() || "",
+    fccId: fd.get("fccId")?.trim() || "",
+    frecuencia: fd.get("frecuencia")?.trim() || "",
     controlId: fd.get("controlId") || "",
     espadinCodigo: fd.get("espadinCodigo") || "",
     espadinId: "",

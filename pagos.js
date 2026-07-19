@@ -178,6 +178,28 @@ export async function savePago(uidUser, data, existingId = null) {
   }
 }
 
+
+export function renderPagoDetail(pago) {
+  const p = pago;
+  return `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div class="sheet-title">Detalle del gasto</div>
+      <button class="sheet-close" data-close-sheet><i class="ti ti-x"></i></button>
+    </div>
+    <div class="kv-row"><span class="kv-label">Descripción</span><span class="kv-value">${escapeHtml(p.descripcion || "—")}</span></div>
+    <div class="kv-row"><span class="kv-label">Monto</span><span class="kv-value mono negative">${formatCLP(p.monto)}</span></div>
+    <div class="kv-row"><span class="kv-label">Fecha</span><span class="kv-value">${formatDate(p.fecha)}</span></div>
+    <div class="kv-row"><span class="kv-label">Forma de pago</span><span class="kv-value">${escapeHtml(p.formaPago || "—")}</span></div>
+    <div class="kv-row"><span class="kv-label">Notas</span><span class="kv-value">${escapeHtml(p.notas || "—")}</span></div>
+    <div class="detail-section-title">Acciones</div>
+    <div class="flex-gap">
+      <button class="btn" id="btn-edit-pago"><i class="ti ti-edit"></i> Editar</button>
+      <button class="btn btn-danger" id="btn-delete-pago"><i class="ti ti-trash"></i> Eliminar</button>
+    </div>
+  `;
+}
+
 export async function deletePago(uidUser, id) {
   await deleteItem(uidUser, "pagos", id);
   showToast("Gasto eliminado", "success");

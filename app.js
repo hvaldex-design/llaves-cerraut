@@ -10,7 +10,7 @@ import {
   removeMediaFromTrabajo, calcularCostoAutomatico
 } from "./trabajos.js";
 import {
-  renderPagosView, renderPagoForm, readPagoForm, savePago, deletePago
+  renderPagosView, renderPagoForm, renderPagoDetail, readPagoForm, savePago, deletePago
 } from "./pagos.js";
 import {
   renderInventarioView, renderProductoForm, renderProductoDetail,
@@ -149,7 +149,7 @@ function renderCurrentView() {
   } else if (state.view === "pagos") {
     container.innerHTML = renderPagosView(state);
     container.querySelectorAll("[data-open-pago]").forEach((card) => {
-      card.addEventListener("click", () => openSheet("pago-form", card.dataset.openPago));
+      card.addEventListener("click", () => openSheet("pago-detail", card.dataset.openPago));
     });
   } else {
     container.innerHTML = renderInventarioView(state);
@@ -355,6 +355,24 @@ function renderSheet() {
         closeSheet();
       } catch (err) {
         showToast("No se pudo guardar el gasto.", "error");
+      }
+    });
+  }
+
+  else if (type === "pago-detail") {
+    const pago = state.pagos.find((p) => p.id === id);
+    if (!pago) return closeSheet();
+    content.innerHTML = renderPagoDetail(pago);
+    bindCloseButtons();
+
+    document.getElementById("btn-edit-pago").addEventListener("click", () => {
+      openSheet("pago-form", pago.id);
+    });
+
+    document.getElementById("btn-delete-pago").addEventListener("click", async () => {
+      if (confirm("¿Eliminar este gasto? Esta acción no se puede deshacer.")) {
+        await deletePago(state.user.uid, pago.id);
+        closeSheet();
       }
     });
   }
