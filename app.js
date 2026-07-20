@@ -1,298 +1,508 @@
-import { state, setLogoTaller, setNombreTaller, adjustStock, saveHistorialEntry } from "./state.js";
-import { renderNavbar, renderMainTab, renderStockTab, renderStatsTab, renderSheetContainer, renderProductDetail, renderConfigTaller, renderToast, showToast } from "./ui.js";
-import { searchEspadines, getEspadinById, marcasPopulares, tiposUso, tiposVehiculo } from "./espadines.js";
+// ============================================================
+// app.js — núcleo de la aplicación
+// ============================================================
+import { auth, loginWithGoogle, logout, watchAuth, watchCollection, updateItem } from "./firebase.js";
+import { uploadMedia } from "./cloudinary.js";
+import { showToast, formatDate } from "./helpers.js";
+import { renderDashboard } from "./dashboard.js";
+import { getNombreTaller, getLogoTaller, setNombreTaller, setLogoTaller, renderConfigTaller } from "./taller.js";
+import {
+  renderTrabajosView, renderTrabajoForm, renderTrabajoDetail,
+  readTrabajoForm, saveTrabajo, saveTrabajoYDevolverId, deleteTrabajo, addMediaToTrabajo,
+  removeMediaFromTrabajo, calcularCostoAutomatico
+} from "./trabajos.js";
+import {
+  renderPagosView, renderPagoForm, renderPagoDetail, readPagoForm, savePago, deletePago
+} from "./pagos.js";
+import {
+  renderInventarioView, renderProductoForm, renderProductoDetail,
+  readProductoForm, saveProducto, deleteProducto, adjustStock
+} from "./inventario.js";
 
-export function initApp() {
-  const app = document.getElementById("app");
-  app.innerHTML = `
-    <header class="app-header">
-      <div class="brand">
-        ${keyIconSvg(28)}
-        <h1 class="brand-title">CerrAuto</h1>
-      </div>
-      <button class="btn-icon" id="btn-config" aria-label="Configuración">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-          <circle cx="12" cy="12" r="3"/>
-        </svg>
+const state = {
+  user: null,
+  view: "inicio", // inicio | trabajos | pagos | inventario
+  trabajos: [],
+  pagos: [],
+  inventario: [],
+  unsubscribers: [],
+  sheet: null // { type, payload }
+};
+
+const root = document.getElementById("app");
+
+// ---------------- Auth ----------------
+
+watchAuth((user) => {
+  state.user = user;
+  if (user) {
+    subscribeData();
+    renderApp();
+  } else {
+    state.unsubscribers.forEach((fn) => fn());
+    state.unsubscribers = [];
+    renderLogin();
+  }
+});
+
+function subscribeData() {
+  state.unsubscribers.forEach((fn) => fn());
+  state.unsubscribers = [
+    watchCollection(state.user.uid, "trabajos", (items) => { state.trabajos = items; renderCurrentView(); }),
+    watchCollection(state.user.uid, "pagos", (items) => { state.pagos = items; renderCurrentView(); }),
+    watchCollection(state.user.uid, "inventario", (items) => { state.inventario = items; renderCurrentView(); })
+  ];
+}
+
+function renderLogin() {
+  root.innerHTML = `
+    <div class="login-screen">
+      ${keyIconSvg(64)}
+      <div class="login-title">${getNombreTaller().split(" ").slice(0,-1).join(" ")||"Llaves"} <span>${getNombreTaller().split(" ").slice(-1)[0]||"CerrAuto"}</span></div>
+      <div class="login-subtitle">Tus trabajos, pagos e inventario de cerrajería automotriz, en un solo lugar.</div>
+      <button class="btn btn-google" id="btn-login">
+        <i class="ti ti-brand-google"></i> Continuar con Google
       </button>
-    </header>
+      <div class="login-footnote">Tus datos se guardan de forma privada y solo tú puedes verlos.</div>
+    </div>
+  `;
+  document.getElementById("btn-login").addEventListener("click", async () => {
+    try {
+      await loginWithGoogle();
+    } catch (e) {
+      showToast("No se pudo iniciar sesión. Intenta de nuevo.", "error");
+    }
+  });
+}
 
-    <main class="app-main" id="main-content"></main>
+// ---------------- Shell de la app ----------------
 
-    ${renderNavbar()}
-    ${renderSheetContainer()}
-    ${renderToast()}
+function applyTema() {
+  const saved = localStorage.getItem("cerrauto_tema") || "dark";
+  document.documentElement.dataset.tema = saved;
+}
+
+function renderApp() {
+  applyTema();
+  const logo = getLogoTaller();
+  const nombre = getNombreTaller();
+  const partes = nombre.split(" ");
+  const nombrePrincipal = partes.slice(0, -1).join(" ") || nombre;
+  const nombreFinal = partes.length > 1 ? partes[partes.length - 1] : "";
+
+  root.innerHTML = `
+    <div class="topbar">
+      <div class="brand">
+        ${logo
+          ? `<img src="${logo}" class="brand-logo-img" alt="logo">`
+          : keyIconSvg(28)}
+        <div class="brand-text">${nombrePrincipal} <span>${nombreFinal}</span></div>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button class="topbar-action" id="btn-toggle-tema" title="Cambiar modo">
+          <i class="ti ti-${document.documentElement.dataset.tema === 'light' ? 'moon' : 'sun'}"></i>
+        </button>
+        <button class="topbar-action" id="btn-config-taller" title="Configurar taller">
+          <i class="ti ti-settings"></i>
+        </button>
+        <button class="topbar-action" id="btn-logout" title="Cerrar sesión">
+          <i class="ti ti-logout"></i>
+        </button>
+      </div>
+    </div>
+    <div class="view" id="view-container"></div>
+    <button class="fab" id="fab-add"><i class="ti ti-plus"></i></button>
+    <nav class="bottomnav">
+      <div class="bottomnav-inner">
+        <button class="navbtn" data-view="inicio"><i class="ti ti-home"></i>Inicio</button>
+        <button class="navbtn" data-view="trabajos"><i class="ti ti-key"></i>Trabajos</button>
+        <button class="navbtn" data-view="pagos"><i class="ti ti-chart-bar"></i>Finanzas</button>
+        <button class="navbtn" data-view="inventario"><i class="ti ti-box"></i>Stock</button>
+      </div>
+    </nav>
   `;
 
-  bindEvents();
-  renderCurrentView();
-}
+  document.getElementById("btn-logout").addEventListener("click", async () => {
+    await logout();
+    showToast("Sesión cerrada", "success");
+  });
 
-export function renderApp() {
-  renderCurrentView();
-}
+  document.getElementById("btn-toggle-tema").addEventListener("click", () => {
+    const actual = document.documentElement.dataset.tema;
+    const nuevo = actual === "light" ? "dark" : "light";
+    document.documentElement.dataset.tema = nuevo;
+    localStorage.setItem("cerrauto_tema", nuevo);
+    renderApp(); // re-renderiza para actualizar ícono y topbar
+    renderCurrentView();
+  });
 
-function bindEvents() {
-  // Config
-  document.getElementById("btn-config")?.addEventListener("click", () => {
+  document.getElementById("btn-config-taller").addEventListener("click", () => {
     openSheet("config-taller");
   });
 
-  // Nav tabs
-  document.querySelectorAll(".nav-item").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      const tab = e.currentTarget.dataset.tab;
-      state.currentTab = tab;
-
-      document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
-      e.currentTarget.classList.add("active");
-
+  document.querySelectorAll(".navbtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.view = btn.dataset.view;
       renderCurrentView();
     });
   });
 
-  // Evento backdrop modal
-  const backdrop = document.getElementById("sheet-backdrop");
-  if (backdrop) {
-    backdrop.addEventListener("click", closeSheet);
-  }
+  document.getElementById("fab-add").addEventListener("click", () => {
+    if (state.view === "trabajos") openSheet("trabajo-form");
+    else if (state.view === "pagos") openSheet("pago-form");
+    else openSheet("producto-form");
+  });
+
+  renderCurrentView();
 }
 
 function renderCurrentView() {
-  const container = document.getElementById("main-content");
+  if (!state.user) return;
+  document.querySelectorAll(".navbtn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === state.view);
+  });
+
+  const container = document.getElementById("view-container");
   if (!container) return;
 
-  if (state.currentTab === "main") {
-    container.innerHTML = renderMainTab();
-    bindMainEvents();
-  } else if (state.currentTab === "stock") {
-    container.innerHTML = renderStockTab();
-    bindStockEvents();
-  } else if (state.currentTab === "stats") {
-    container.innerHTML = renderStatsTab();
-    bindStatsEvents();
-  }
-}
-
-// ---------------- TAB BUSCADOR PRINCIPAL ----------------
-
-function bindMainEvents() {
-  const inputSearch = document.getElementById("main-search");
-  const selectMarca = document.getElementById("filter-marca");
-  const selectTipo = document.getElementById("filter-tipo");
-  const grid = document.getElementById("results-grid");
-
-  function updateResults() {
-    const query = inputSearch ? inputSearch.value : "";
-    const marca = selectMarca ? selectMarca.value : "";
-    const tipo = selectTipo ? selectTipo.value : "";
-
-    const resultados = searchEspadines({ query, marca, tipo });
-
-    if (!grid) return;
-
-    if (resultados.length === 0) {
-      grid.innerHTML = `
-        <div class="empty-state">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="11" cy="11" r="8"/>
-            <path d="M21 21l-4.35-4.35"/>
-          </svg>
-          <p>No se encontraron espadines con esos filtros.</p>
-        </div>
-      `;
-      return;
+  if (state.view === "inicio") {
+    const fabEl = document.getElementById("fab-add");
+    if (fabEl) fabEl.classList.add("hidden");
+    container.innerHTML = renderDashboard(state);
+    // Último trabajo clickeable
+    const cardUltimo = container.querySelector("[data-open-trabajo]");
+    if (cardUltimo) {
+      cardUltimo.addEventListener("click", () => openSheet("trabajo-detail", cardUltimo.dataset.openTrabajo));
     }
-
-    grid.innerHTML = resultados
-      .map((item) => {
-        const userStock = state.userStock[item.id] || 0;
-        const stockBadgeClass = userStock > 0 ? "stock-ok" : "stock-zero";
-
-        return `
-          <div class="card-espadin" data-id="${item.id}">
-            <div class="card-header">
-              <span class="card-codigo">${item.codigo}</span>
-              <span class="badge-stock ${stockBadgeClass}">${userStock} un.</span>
-            </div>
-            <h3 class="card-title">${item.nombre}</h3>
-            <p class="card-compat">${item.marcasCompatibles.join(", ")}</p>
-            <div class="card-footer">
-              <span class="card-tipo">${item.tipoUso}</span>
-              <button class="btn-text">Ver detalle →</button>
-            </div>
-          </div>
-        `;
-      })
-      .join("");
-
-    // Eventos click tarjetas
-    grid.querySelectorAll(".card-espadin").forEach((card) => {
-      card.addEventListener("click", () => {
-        const id = card.dataset.id;
-        openSheet("producto-detail", id);
+  } else if (state.view === "trabajos") {
+    container.innerHTML = renderTrabajosView(state);
+    container.querySelectorAll("[data-open-trabajo]").forEach((card) => {
+      card.addEventListener("click", () => openSheet("trabajo-detail", card.dataset.openTrabajo));
+    });
+    // Buscador + filtros
+    function aplicarFiltros() {
+      const q     = (document.getElementById("buscar-trabajo")?.value || "").toLowerCase().trim();
+      const marca = (document.getElementById("filtro-marca")?.value   || "").toLowerCase().trim();
+      const tipo  = (document.getElementById("filtro-tipo")?.value    || "").toLowerCase().trim();
+      const mes   = (document.getElementById("filtro-mes")?.value     || "").trim();
+      const cards = container.querySelectorAll(".trabajo-card");
+      let visible = 0;
+      cards.forEach(c => {
+        const search = (c.dataset.search || "");
+        const fecha  = (c.dataset.fecha  || "");
+        const matchQ     = !q     || search.includes(q);
+        const matchMarca = !marca || search.includes(marca);
+        const matchTipo  = !tipo  || search.includes(tipo);
+        const matchMes   = !mes   || fecha.startsWith(mes);
+        const match = matchQ && matchMarca && matchTipo && matchMes;
+        c.classList.toggle("hidden", !match);
+        if (match) visible++;
       });
-    });
-  }
-
-  if (inputSearch) inputSearch.addEventListener("input", updateResults);
-  if (selectMarca) selectMarca.addEventListener("change", updateResults);
-  if (selectTipo) selectTipo.addEventListener("change", updateResults);
-
-  // Inicial
-  updateResults();
-}
-
-// ---------------- TAB STOCK ----------------
-
-function bindStockEvents() {
-  const inputSearch = document.getElementById("stock-search");
-  const filterEstado = document.getElementById("stock-filter-estado");
-  const listContainer = document.getElementById("stock-list");
-
-  function updateStockList() {
-    const query = inputSearch ? inputSearch.value.toLowerCase() : "";
-    const estado = filterEstado ? filterEstado.value : "todos";
-
-    const todos = searchEspadines({ query: "" });
-
-    const filtrados = todos.filter((item) => {
-      const stock = state.userStock[item.id] || 0;
-
-      // Filtro por texto
-      const matchText =
-        item.nombre.toLowerCase().includes(query) ||
-        item.codigo.toLowerCase().includes(query) ||
-        item.marcasCompatibles.some((m) => m.toLowerCase().includes(query));
-
-      if (!matchText) return false;
-
-      // Filtro por estado
-      if (estado === "disponible") return stock > 0;
-      if (estado === "agotado") return stock === 0;
-
-      return true;
-    });
-
-    if (!listContainer) return;
-
-    if (filtrados.length === 0) {
-      listContainer.innerHTML = `
-        <div class="empty-state">
-          <p>No hay productos en esta categoría.</p>
-        </div>
-      `;
-      return;
+      const sinRes = document.getElementById("sin-resultados");
+      if (sinRes) sinRes.classList.toggle("hidden", visible > 0);
     }
-
-    listContainer.innerHTML = filtrados
-      .map((item) => {
-        const stock = state.userStock[item.id] || 0;
-        return `
-          <div class="stock-item-row" data-id="${item.id}">
-            <div class="stock-item-info">
-              <strong>${item.codigo}</strong>
-              <span>${item.nombre}</span>
-            </div>
-            <div class="stock-item-actions">
-              <button class="btn-stock-adj minus" data-id="${item.id}" data-delta="-1">-</button>
-              <span class="stock-count ${stock === 0 ? "zero" : ""}">${stock}</span>
-              <button class="btn-stock-adj plus" data-id="${item.id}" data-delta="1">+</button>
-            </div>
-          </div>
-        `;
-      })
-      .join("");
-
-    // Eventos ajuste rápido de stock
-    listContainer.querySelectorAll(".btn-stock-adj").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.id;
-        const delta = parseInt(btn.dataset.delta, 10);
-
-        if (state.user) {
-          await adjustStock(state.user.uid, id, delta);
-          updateStockList();
-        }
-      });
+    ["buscar-trabajo","filtro-marca","filtro-tipo","filtro-mes"].forEach(id => {
+      document.getElementById(id)?.addEventListener("input",  aplicarFiltros);
+      document.getElementById(id)?.addEventListener("change", aplicarFiltros);
     });
-
-    // Click en la fila para abrir detalle
-    listContainer.querySelectorAll(".stock-item-row").forEach((row) => {
-      row.addEventListener("click", (e) => {
-        if (e.target.classList.contains("btn-stock-adj")) return;
-        openSheet("producto-detail", row.dataset.id);
-      });
+  } else if (state.view === "pagos") {
+    container.innerHTML = renderPagosView(state);
+    container.querySelectorAll("[data-open-pago]").forEach((card) => {
+      card.addEventListener("click", () => openSheet("pago-detail", card.dataset.openPago));
+    });
+  } else {
+    container.innerHTML = renderInventarioView(state);
+    container.querySelectorAll("[data-open-producto]").forEach((card) => {
+      card.addEventListener("click", () => openSheet("producto-detail", card.dataset.openProducto));
     });
   }
-
-  if (inputSearch) inputSearch.addEventListener("input", updateStockList);
-  if (filterEstado) filterEstado.addEventListener("change", updateStockList);
-
-  updateStockList();
 }
 
-// ---------------- TAB ESTADÍSTICAS ----------------
+// ---------------- Helpers de creación de trabajo con media ----------------
 
-function bindStatsEvents() {
-  // Por si se agregan interacciones a stats
+async function uploadMediaWrapper(file, onProgress) {
+  return uploadMedia(file, onProgress);
 }
 
-// ---------------- MANEJO DE MODALES / BOTTOM SHEET ----------------
+async function saveTrabajoConMedia(uidUser, data, inventario, mediaLocal) {
+  const newId = await saveTrabajoYDevolverId(uidUser, data, inventario);
+  if (mediaLocal.length) {
+    await updateItem(uidUser, "trabajos", newId, { media: mediaLocal });
+  }
+}
 
-export function openSheet(type, data = null) {
-  const container = document.getElementById("sheet-container");
+// ---------------- Sheets (modales inferiores) ----------------
+
+function openSheet(type, id = null) {
+  state.sheet = { type, id };
+  renderSheet();
+}
+
+function closeSheet() {
   const backdrop = document.getElementById("sheet-backdrop");
-
-  if (!container || !backdrop) return;
-
-  renderSheetContent(type, data);
-
-  backdrop.classList.add("open");
-  container.classList.add("open");
+  if (backdrop) backdrop.remove();
+  state.sheet = null;
 }
 
-export function closeSheet() {
-  const container = document.getElementById("sheet-container");
-  const backdrop = document.getElementById("sheet-backdrop");
+function renderSheet() {
+  const existing = document.getElementById("sheet-backdrop");
+  if (existing) existing.remove();
 
-  if (container) container.classList.remove("open");
-  if (backdrop) backdrop.classList.remove("open");
-}
+  const backdrop = document.createElement("div");
+  backdrop.className = "sheet-backdrop";
+  backdrop.id = "sheet-backdrop";
+  backdrop.innerHTML = `<div class="sheet" id="sheet-content"></div>`;
+  document.body.appendChild(backdrop);
 
-function renderSheetContent(type, data) {
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) closeSheet();
+  });
+
   const content = document.getElementById("sheet-content");
-  if (!content) return;
+  const { type, id } = state.sheet;
 
-  if (type === "producto-detail") {
-    const producto = getEspadinById(data);
-    if (!producto) return;
-
-    const currentStock = state.userStock[producto.id] || 0;
-    content.innerHTML = renderProductDetail(producto, currentStock);
-
+  if (type === "trabajo-form") {
+    const trabajo = id ? state.trabajos.find((t) => t.id === id) : null;
+    // Mientras se crea/edita, mantenemos una copia local de media para poder agregar/quitar antes de guardar
+    const mediaLocal = trabajo ? [...(trabajo.media || [])] : [];
+    content.innerHTML = renderTrabajoForm(trabajo, state.inventario);
     bindCloseButtons();
 
-    // Eventos sumar/restar dentro del modal
-    document.getElementById("btn-stock-menos")?.addEventListener("click", async () => {
-      await adjustStock(state.user.uid, producto.id, -1);
-      openSheet("producto-detail", producto.id);
+    const selectControl = document.getElementById("select-control");
+    const selectEspadin = document.getElementById("select-espadin");
+    const selectTipoServicio = document.getElementById("select-tipo-servicio");
+    const inputPincode = document.getElementById("input-pincode");
+    const inputCostoTotal = document.getElementById("input-costo-total");
+
+    function recalcularCosto() {
+      const opcionControl = selectControl.selectedOptions[0];
+      const controlCosto = opcionControl ? Number(opcionControl.dataset.costo || 0) : 0;
+      const controlUsaPila = opcionControl ? opcionControl.dataset.pila === "1" : false;
+      const espadinSeleccionado = !!selectEspadin.value;  // cualquier espadín suma $300
+      const total = calcularCostoAutomatico({
+        tipoServicio: selectTipoServicio.value,
+        controlCosto,
+        controlUsaPila: selectControl.value ? controlUsaPila : false,
+        espadinSeleccionado,
+        pincode: inputPincode.value
+      });
+      inputCostoTotal.value = total;
+    }
+
+    [selectControl, selectEspadin, selectTipoServicio, inputPincode].forEach((el) => {
+      el.addEventListener("input", recalcularCosto);
+      el.addEventListener("change", recalcularCosto);
+    });
+    if (!trabajo) recalcularCosto(); // valor inicial al crear un trabajo nuevo
+
+    function renderMediaTiles() {
+      const grid = content.querySelector(".media-grid");
+      const tilesHtml = mediaLocal.map((m, i) => `
+        <div class="media-thumb ${m.type === "video" ? "is-video" : ""}">
+          <img src="${m.thumbUrl || m.url}" alt="">
+          <button type="button" class="media-remove-btn" data-remove-local="${i}"><i class="ti ti-x"></i></button>
+        </div>
+      `).join("");
+      grid.querySelectorAll(".media-thumb").forEach((el) => el.remove());
+      grid.insertAdjacentHTML("afterbegin", tilesHtml);
+      grid.querySelectorAll("[data-remove-local]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          mediaLocal.splice(Number(btn.dataset.removeLocal), 1);
+          renderMediaTiles();
+        });
+      });
+    }
+    renderMediaTiles();
+
+    const mediaInput = document.getElementById("media-input");
+    const tile = document.getElementById("media-upload-tile");
+    mediaInput.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        tile.classList.add("uploading");
+        tile.querySelector("span").textContent = "Subiendo...";
+        try {
+          const result = await uploadMediaWrapper(file, (pct) => {
+            tile.querySelector("span").textContent = pct + "%";
+          });
+          mediaLocal.push(result);
+          renderMediaTiles();
+        } catch (err) {
+          showToast(err.message || "No se pudo subir el archivo.", "error");
+        } finally {
+          tile.classList.remove("uploading");
+          tile.querySelector("span").textContent = "Agregar";
+        }
+      }
+      mediaInput.value = "";
     });
 
-    document.getElementById("btn-stock-mas")?.addEventListener("click", async () => {
-      await adjustStock(state.user.uid, producto.id, 1);
+    document.getElementById("form-trabajo").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = readTrabajoForm(e.target);
+      try {
+        if (trabajo?.id) {
+          await saveTrabajo(state.user.uid, data, state.inventario, trabajo.id, mediaLocal);
+        } else {
+          // Crear primero el trabajo (esto descuenta stock), luego guardar la media local
+          await saveTrabajoConMedia(state.user.uid, data, state.inventario, mediaLocal);
+        }
+        closeSheet();
+      } catch (err) {
+        showToast("No se pudo guardar el trabajo.", "error");
+      }
+    });
+  }
+
+  else if (type === "trabajo-detail") {
+    const trabajo = state.trabajos.find((t) => t.id === id);
+    if (!trabajo) return closeSheet();
+    content.innerHTML = renderTrabajoDetail(trabajo);
+    bindCloseButtons();
+
+    document.getElementById("btn-edit-trabajo").addEventListener("click", () => openSheet("trabajo-form", trabajo.id));
+    document.getElementById("btn-delete-trabajo").addEventListener("click", async () => {
+      if (confirm("¿Eliminar este trabajo? Esta acción no se puede deshacer.")) {
+        await deleteTrabajo(state.user.uid, trabajo.id);
+        closeSheet();
+      }
+    });
+
+    content.querySelectorAll("[data-remove-media-detail]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm("¿Eliminar esta foto/video?")) return;
+        const index = Number(btn.dataset.removeMediaDetail);
+        const updatedMedia = await removeMediaFromTrabajo(state.user.uid, trabajo, index);
+        trabajo.media = updatedMedia;
+        openSheet("trabajo-detail", trabajo.id);
+      });
+    });
+
+    const mediaInput = document.getElementById("media-input");
+    const tile = document.getElementById("media-upload-tile");
+    mediaInput.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        tile.classList.add("uploading");
+        tile.querySelector("span").textContent = "Subiendo...";
+        try {
+          const updatedMedia = await addMediaToTrabajo(state.user.uid, trabajo, file, (pct) => {
+            tile.querySelector("span").textContent = pct + "%";
+          });
+          trabajo.media = updatedMedia;
+          openSheet("trabajo-detail", trabajo.id);
+        } catch (err) {
+          showToast(err.message || "No se pudo subir el archivo.", "error");
+          tile.classList.remove("uploading");
+          tile.querySelector("span").textContent = "Agregar";
+        }
+      }
+    });
+  }
+
+  else if (type === "pago-form") {
+    const pago = id ? state.pagos.find((p) => p.id === id) : null;
+    content.innerHTML = renderPagoForm(state.trabajos, pago);
+    bindCloseButtons();
+
+    document.getElementById("form-pago").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = readPagoForm(e.target);
+      try {
+        await savePago(state.user.uid, data, pago?.id || null);
+        closeSheet();
+      } catch (err) {
+        showToast("No se pudo guardar el gasto.", "error");
+      }
+    });
+  }
+
+  else if (type === "pago-detail") {
+    const pago = state.pagos.find((p) => p.id === id);
+    if (!pago) return closeSheet();
+    content.innerHTML = renderPagoDetail(pago);
+    bindCloseButtons();
+
+    document.getElementById("btn-edit-pago").addEventListener("click", () => {
+      openSheet("pago-form", pago.id);
+    });
+
+    document.getElementById("btn-delete-pago").addEventListener("click", async () => {
+      if (confirm("¿Eliminar este gasto? Esta acción no se puede deshacer.")) {
+        await deletePago(state.user.uid, pago.id);
+        closeSheet();
+      }
+    });
+  }
+
+  else if (type === "producto-form") {
+    const producto = id ? state.inventario.find((p) => p.id === id) : null;
+    content.innerHTML = renderProductoForm(producto);
+    bindCloseButtons();
+
+    const selectCategoria = document.getElementById("select-categoria");
+    const campoUsaPila = document.getElementById("campo-usa-pila");
+    const usaPilaButtons = content.querySelectorAll("#usaPila-segmented button");
+    const usaPilaHidden = document.getElementById("usaPila-hidden");
+
+    function syncCategoriaUI() {
+      campoUsaPila.classList.toggle("hidden", selectCategoria.value !== "Control remoto");
+    }
+    syncCategoriaUI();
+    selectCategoria.addEventListener("change", syncCategoriaUI);
+
+    usaPilaButtons.forEach((b) => {
+      b.addEventListener("click", () => {
+        usaPilaButtons.forEach((x) => x.classList.toggle("active", x === b));
+        usaPilaHidden.value = b.dataset.val;
+      });
+    });
+
+    document.getElementById("form-producto").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = readProductoForm(e.target);
+      try {
+        await saveProducto(state.user.uid, data, producto?.id || null);
+        closeSheet();
+      } catch (err) {
+        showToast("No se pudo guardar el producto.", "error");
+      }
+    });
+  }
+
+  else if (type === "producto-detail") {
+    const producto = state.inventario.find((p) => p.id === id);
+    if (!producto) return closeSheet();
+    content.innerHTML = renderProductoDetail(producto);
+    bindCloseButtons();
+
+    document.getElementById("btn-edit-producto").addEventListener("click", () => openSheet("producto-form", producto.id));
+    document.getElementById("btn-delete-producto").addEventListener("click", async () => {
+      if (confirm("¿Eliminar este producto del inventario?")) {
+        await deleteProducto(state.user.uid, producto.id);
+        closeSheet();
+      }
+    });
+    document.getElementById("btn-stock-menos").addEventListener("click", async () => {
+      await adjustStock(state.user.uid, producto, -1);
       openSheet("producto-detail", producto.id);
     });
-  } else if (type === "config-taller") {
+    document.getElementById("btn-stock-mas").addEventListener("click", async () => {
+      await adjustStock(state.user.uid, producto, 1);
+      openSheet("producto-detail", producto.id);
+    });
+  }
+}
+
+  else if (type === "config-taller") {
     content.innerHTML = renderConfigTaller();
     bindCloseButtons();
 
     // Preview de logo
-    const inputLogoFile = document.getElementById("input-logo-taller");
-    if (inputLogoFile) {
-      inputLogoFile.addEventListener("change", (e) => {
+    const inputLogo = document.getElementById("input-logo-taller");
+    if (inputLogo) {
+      inputLogo.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
@@ -312,30 +522,26 @@ function renderSheetContent(type, data) {
     });
 
     // Toggle de tema desde config
-    document.querySelectorAll("#tema-segmented button").forEach((btn) => {
+    document.querySelectorAll("#tema-segmented button").forEach(btn => {
       btn.addEventListener("click", () => {
         document.documentElement.dataset.tema = btn.dataset.tema;
         localStorage.setItem("cerrauto_tema", btn.dataset.tema);
-        document.querySelectorAll("#tema-segmented button").forEach((b) =>
+        document.querySelectorAll("#tema-segmented button").forEach(b =>
           b.classList.toggle("active", b === btn)
         );
       });
     });
 
     // Guardar nombre
-    document.getElementById("btn-guardar-taller")?.addEventListener("click", () => {
-      const inputNombre = document.getElementById("input-nombre-taller");
-      if (inputNombre) {
-        const nombre = inputNombre.value.trim();
-        setNombreTaller(nombre);
-        showToast("Configuración guardada", "success");
-        closeSheet();
-        renderApp();
-        renderCurrentView();
-      }
+    document.getElementById("btn-guardar-taller").addEventListener("click", () => {
+      const nombre = document.getElementById("input-nombre-taller").value.trim();
+      setNombreTaller(nombre);
+      showToast("Configuración guardada", "success");
+      closeSheet();
+      renderApp();
+      renderCurrentView();
     });
   }
-}
 
 function bindCloseButtons() {
   document.querySelectorAll("[data-close-sheet]").forEach((btn) => {
