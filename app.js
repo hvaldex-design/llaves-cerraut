@@ -492,8 +492,7 @@ function renderSheet() {
       await adjustStock(state.user.uid, producto, 1);
       openSheet("producto-detail", producto.id);
     });
-  }
-}
+    }
 
   else if (type === "config-taller") {
     content.innerHTML = renderConfigTaller();
@@ -542,6 +541,7 @@ function renderSheet() {
       renderCurrentView();
     });
   }
+}
 
 function bindCloseButtons() {
   document.querySelectorAll("[data-close-sheet]").forEach((btn) => {
