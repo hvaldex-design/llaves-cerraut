@@ -520,17 +520,16 @@ function renderSheet() {
       await adjustStock(state.user.uid, producto, 1);
       openSheet("producto-detail", producto.id);
     });
-  } // Cierre de 'else if (type === "producto-detail")'
+  }
 
   else if (type === "config-taller") {
     content.innerHTML = renderConfigTaller();
     bindCloseButtons();
 
     // Preview de logo
-    const inputLogo = document.getElementById("input-nombre-taller"); // o input-logo-taller
-    const inputLogoFile = document.getElementById("input-logo-taller");
-    if (inputLogoFile) {
-      inputLogoFile.addEventListener("change", (e) => {
+    const inputLogo = document.getElementById("input-logo-taller");
+    if (inputLogo) {
+      inputLogo.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
@@ -570,7 +569,7 @@ function renderSheet() {
       renderCurrentView();
     });
   }
-} // <--- AQUÍ DEBE CERRAR RENDER SHEET
+} // <-- AQUÍ CIERRA CORRECTAMENTE renderSheet()
 
 function bindCloseButtons() {
   document.querySelectorAll("[data-close-sheet]").forEach((btn) => {
