@@ -516,6 +516,34 @@ function renderSheet() {
     }
 
     // Quitar logo
+   document.getElementById("btn-stock-mas").addEventListener("click", async () => {
+      await adjustStock(state.user.uid, producto, 1);
+      openSheet("producto-detail", producto.id);
+    });
+  } // Cierre de 'else if (type === "producto-detail")'
+
+  else if (type === "config-taller") {
+    content.innerHTML = renderConfigTaller();
+    bindCloseButtons();
+
+    // Preview de logo
+    const inputLogo = document.getElementById("input-nombre-taller"); // o input-logo-taller
+    const inputLogoFile = document.getElementById("input-logo-taller");
+    if (inputLogoFile) {
+      inputLogoFile.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const preview = document.getElementById("logo-preview");
+          if (preview) preview.innerHTML = `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
+          setLogoTaller(ev.target.result);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Quitar logo
     document.getElementById("btn-remove-logo")?.addEventListener("click", () => {
       localStorage.removeItem("cerrauto_taller_logo");
       openSheet("config-taller");
@@ -542,6 +570,7 @@ function renderSheet() {
       renderCurrentView();
     });
   }
+} // <--- AQUÍ DEBE CERRAR RENDER SHEET
 
 function bindCloseButtons() {
   document.querySelectorAll("[data-close-sheet]").forEach((btn) => {
