@@ -3,7 +3,9 @@
 // ============================================================
 import { auth, loginWithGoogle, logout, watchAuth, watchCollection, updateItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
-import { showToast } from "./helpers.js";
+import { showToast, formatDate } from "./helpers.js";
+import { renderDashboard } from "./dashboard.js";
+import { getNombreTaller, getLogoTaller, setNombreTaller, setLogoTaller, renderConfigTaller } from "./taller.js";
 import {
   renderTrabajosView, renderTrabajoForm, renderTrabajoDetail,
   readTrabajoForm, saveTrabajo, saveTrabajoYDevolverId, deleteTrabajo, addMediaToTrabajo,
@@ -19,7 +21,7 @@ import {
 
 const state = {
   user: null,
-  view: "trabajos", // trabajos | pagos | inventario
+  view: "inicio", // inicio | trabajos | pagos | inventario
   trabajos: [],
   pagos: [],
   inventario: [],
@@ -56,7 +58,7 @@ function renderLogin() {
   root.innerHTML = `
     <div class="login-screen">
       ${keyIconSvg(64)}
-      <div class="login-title">Llaves <span>CerrAuto</span></div>
+      <div class="login-title">${getNombreTaller().split(" ").slice(0,-1).join(" ")||"Llaves"} <span>${getNombreTaller().split(" ").slice(-1)[0]||"CerrAuto"}</span></div>
       <div class="login-subtitle">Tus trabajos, pagos e inventario de cerrajería automotriz, en un solo lugar.</div>
       <button class="btn btn-google" id="btn-login">
         <i class="ti ti-brand-google"></i> Continuar con Google
@@ -75,19 +77,44 @@ function renderLogin() {
 
 // ---------------- Shell de la app ----------------
 
+function applyTema() {
+  const saved = localStorage.getItem("cerrauto_tema") || "dark";
+  document.documentElement.dataset.tema = saved;
+}
+
 function renderApp() {
+  applyTema();
+  const logo = getLogoTaller();
+  const nombre = getNombreTaller();
+  const partes = nombre.split(" ");
+  const nombrePrincipal = partes.slice(0, -1).join(" ") || nombre;
+  const nombreFinal = partes.length > 1 ? partes[partes.length - 1] : "";
+
   root.innerHTML = `
     <div class="topbar">
       <div class="brand">
-        ${keyIconSvg(28)}
-        <div class="brand-text">Llaves <span>CerrAuto</span></div>
+        ${logo
+          ? `<img src="${logo}" class="brand-logo-img" alt="logo">`
+          : keyIconSvg(28)}
+        <div class="brand-text">${nombrePrincipal} <span>${nombreFinal}</span></div>
       </div>
-      <button class="topbar-action" id="btn-logout"><i class="ti ti-logout"></i></button>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button class="topbar-action" id="btn-toggle-tema" title="Cambiar modo">
+          <i class="ti ti-${document.documentElement.dataset.tema === 'light' ? 'moon' : 'sun'}"></i>
+        </button>
+        <button class="topbar-action" id="btn-config-taller" title="Configurar taller">
+          <i class="ti ti-settings"></i>
+        </button>
+        <button class="topbar-action" id="btn-logout" title="Cerrar sesión">
+          <i class="ti ti-logout"></i>
+        </button>
+      </div>
     </div>
     <div class="view" id="view-container"></div>
     <button class="fab" id="fab-add"><i class="ti ti-plus"></i></button>
     <nav class="bottomnav">
       <div class="bottomnav-inner">
+        <button class="navbtn" data-view="inicio"><i class="ti ti-home"></i>Inicio</button>
         <button class="navbtn" data-view="trabajos"><i class="ti ti-key"></i>Trabajos</button>
         <button class="navbtn" data-view="pagos"><i class="ti ti-chart-bar"></i>Finanzas</button>
         <button class="navbtn" data-view="inventario"><i class="ti ti-box"></i>Stock</button>
@@ -98,6 +125,19 @@ function renderApp() {
   document.getElementById("btn-logout").addEventListener("click", async () => {
     await logout();
     showToast("Sesión cerrada", "success");
+  });
+
+  document.getElementById("btn-toggle-tema").addEventListener("click", () => {
+    const actual = document.documentElement.dataset.tema;
+    const nuevo = actual === "light" ? "dark" : "light";
+    document.documentElement.dataset.tema = nuevo;
+    localStorage.setItem("cerrauto_tema", nuevo);
+    renderApp(); // re-renderiza para actualizar ícono y topbar
+    renderCurrentView();
+  });
+
+  document.getElementById("btn-config-taller").addEventListener("click", () => {
+    openSheet("config-taller");
   });
 
   document.querySelectorAll(".navbtn").forEach((btn) => {
@@ -125,27 +165,46 @@ function renderCurrentView() {
   const container = document.getElementById("view-container");
   if (!container) return;
 
-  if (state.view === "trabajos") {
+  if (state.view === "inicio") {
+    const fabEl = document.getElementById("fab-add");
+    if (fabEl) fabEl.classList.add("hidden");
+    container.innerHTML = renderDashboard(state);
+    // Último trabajo clickeable
+    const cardUltimo = container.querySelector("[data-open-trabajo]");
+    if (cardUltimo) {
+      cardUltimo.addEventListener("click", () => openSheet("trabajo-detail", cardUltimo.dataset.openTrabajo));
+    }
+  } else if (state.view === "trabajos") {
     container.innerHTML = renderTrabajosView(state);
     container.querySelectorAll("[data-open-trabajo]").forEach((card) => {
       card.addEventListener("click", () => openSheet("trabajo-detail", card.dataset.openTrabajo));
     });
-    // Buscador
-    const buscarInput = document.getElementById("buscar-trabajo");
-    if (buscarInput) {
-      buscarInput.addEventListener("input", () => {
-        const q = buscarInput.value.toLowerCase().trim();
-        const cards = container.querySelectorAll(".trabajo-card");
-        let visible = 0;
-        cards.forEach(c => {
-          const match = !q || c.dataset.search.includes(q);
-          c.classList.toggle("hidden", !match);
-          if (match) visible++;
-        });
-        const sinRes = document.getElementById("sin-resultados");
-        if (sinRes) sinRes.classList.toggle("hidden", visible > 0 || !q);
+    // Buscador + filtros
+    function aplicarFiltros() {
+      const q     = (document.getElementById("buscar-trabajo")?.value || "").toLowerCase().trim();
+      const marca = (document.getElementById("filtro-marca")?.value   || "").toLowerCase().trim();
+      const tipo  = (document.getElementById("filtro-tipo")?.value    || "").toLowerCase().trim();
+      const mes   = (document.getElementById("filtro-mes")?.value     || "").trim();
+      const cards = container.querySelectorAll(".trabajo-card");
+      let visible = 0;
+      cards.forEach(c => {
+        const search = (c.dataset.search || "");
+        const fecha  = (c.dataset.fecha  || "");
+        const matchQ     = !q     || search.includes(q);
+        const matchMarca = !marca || search.includes(marca);
+        const matchTipo  = !tipo  || search.includes(tipo);
+        const matchMes   = !mes   || fecha.startsWith(mes);
+        const match = matchQ && matchMarca && matchTipo && matchMes;
+        c.classList.toggle("hidden", !match);
+        if (match) visible++;
       });
+      const sinRes = document.getElementById("sin-resultados");
+      if (sinRes) sinRes.classList.toggle("hidden", visible > 0);
     }
+    ["buscar-trabajo","filtro-marca","filtro-tipo","filtro-mes"].forEach(id => {
+      document.getElementById(id)?.addEventListener("input",  aplicarFiltros);
+      document.getElementById(id)?.addEventListener("change", aplicarFiltros);
+    });
   } else if (state.view === "pagos") {
     container.innerHTML = renderPagosView(state);
     container.querySelectorAll("[data-open-pago]").forEach((card) => {
@@ -435,6 +494,54 @@ function renderSheet() {
     });
   }
 }
+
+  else if (type === "config-taller") {
+    content.innerHTML = renderConfigTaller();
+    bindCloseButtons();
+
+    // Preview de logo
+    const inputLogo = document.getElementById("input-logo-taller");
+    if (inputLogo) {
+      inputLogo.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const preview = document.getElementById("logo-preview");
+          if (preview) preview.innerHTML = `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
+          setLogoTaller(ev.target.result);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Quitar logo
+    document.getElementById("btn-remove-logo")?.addEventListener("click", () => {
+      localStorage.removeItem("cerrauto_taller_logo");
+      openSheet("config-taller");
+    });
+
+    // Toggle de tema desde config
+    document.querySelectorAll("#tema-segmented button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.documentElement.dataset.tema = btn.dataset.tema;
+        localStorage.setItem("cerrauto_tema", btn.dataset.tema);
+        document.querySelectorAll("#tema-segmented button").forEach(b =>
+          b.classList.toggle("active", b === btn)
+        );
+      });
+    });
+
+    // Guardar nombre
+    document.getElementById("btn-guardar-taller").addEventListener("click", () => {
+      const nombre = document.getElementById("input-nombre-taller").value.trim();
+      setNombreTaller(nombre);
+      showToast("Configuración guardada", "success");
+      closeSheet();
+      renderApp();
+      renderCurrentView();
+    });
+  }
 
 function bindCloseButtons() {
   document.querySelectorAll("[data-close-sheet]").forEach((btn) => {

@@ -742,3 +742,94 @@ label {
 .search-box input::-webkit-search-cancel-button {
   -webkit-appearance: none;
 }
+
+/* ============================================================
+   MODO CLARO
+   ============================================================ */
+[data-tema="light"] {
+  --bg: #F5F5F0;
+  --bg-elevated: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-input: #F0EFE9;
+  --border: #E0DEDA;
+  --border-strong: #C8C6C0;
+  --text-primary: #1A1A18;
+  --text-secondary: #5A5A55;
+  --text-muted: #9A9A95;
+  --ok-bg: #E8F5EE;
+  --warn-bg: #FFF8E8;
+  --danger-bg: #FDE8E7;
+}
+
+[data-tema="light"] body {
+  background: var(--bg);
+}
+
+[data-tema="light"] .topbar {
+  box-shadow: 0 1px 0 var(--border);
+}
+
+[data-tema="light"] .bottomnav {
+  box-shadow: 0 -1px 0 var(--border);
+}
+
+[data-tema="light"] .fab {
+  box-shadow: 0 4px 16px rgba(217, 123, 63, 0.3);
+}
+
+/* ============================================================
+   LOGO DEL TALLER EN TOPBAR
+   ============================================================ */
+.brand-logo-img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1.5px solid var(--border-strong);
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+.dashboard-greeting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+/* ============================================================
+   FILTROS
+   ============================================================ */
+.filtros-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.filtros-row::-webkit-scrollbar { display: none; }
+
+.filtro-select {
+  flex-shrink: 0;
+  padding: 9px 12px;
+  font-size: 13px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  min-width: 0;
+  max-width: 160px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A8ACB1' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.filtro-select:focus {
+  outline: none;
+  border-color: var(--copper);
+}

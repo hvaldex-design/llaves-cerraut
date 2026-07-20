@@ -28,7 +28,8 @@ export function renderTrabajosView(state) {
 
   const cards = trabajos.map((t) => `
     <div class="card trabajo-card" data-open-trabajo="${t.id}"
-         data-search="${escapeHtml((t.vehiculoMarca+" "+t.vehiculoModelo+" "+(t.vehiculoAnio||"")+" "+(t.cliente||"")+" "+(t.tipoServicio||"")+" "+(t.tipoControl||"")).toLowerCase())}">
+         data-search="${escapeHtml((t.vehiculoMarca+" "+t.vehiculoModelo+" "+(t.vehiculoAnio||"")+" "+(t.cliente||"")+" "+(t.tipoServicio||"")+" "+(t.tipoControl||"")).toLowerCase())}"
+         data-fecha="${t.fecha||""}">
       <div class="card-row">
         <div>
           <p class="card-title">${escapeHtml(t.vehiculoMarca)} ${escapeHtml(t.vehiculoModelo)} ${t.vehiculoAnio ? "· " + escapeHtml(t.vehiculoAnio) : ""}</p>
@@ -45,6 +46,24 @@ export function renderTrabajosView(state) {
     <div class="search-box">
       <i class="ti ti-search"></i>
       <input type="search" id="buscar-trabajo" placeholder="Buscar vehículo, cliente, servicio..." autocomplete="off">
+    </div>
+    <div class="filtros-row">
+      <select id="filtro-marca" class="filtro-select">
+        <option value="">Todas las marcas</option>
+        ${[...new Set(trabajos.map(t => (t.vehiculoMarca||"").trim()).filter(Boolean))].sort().map(m => `<option value="${escapeHtml(m.toLowerCase())}">${escapeHtml(m)}</option>`).join("")}
+      </select>
+      <select id="filtro-tipo" class="filtro-select">
+        <option value="">Todos los servicios</option>
+        ${[...new Set(trabajos.map(t => (t.tipoServicio||"").trim()).filter(Boolean))].sort().map(s => `<option value="${escapeHtml(s.toLowerCase())}">${escapeHtml(s)}</option>`).join("")}
+      </select>
+      <select id="filtro-mes" class="filtro-select">
+        <option value="">Todos los meses</option>
+        ${[...new Set(trabajos.filter(t=>t.fecha).map(t => t.fecha.slice(0,7)))].sort().reverse().map(m => {
+          const [y,mo] = m.split("-");
+          const meses = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+          return `<option value="${m}">${meses[parseInt(mo)]} ${y}</option>`;
+        }).join("")}
+      </select>
     </div>
     <div id="trabajos-lista">${cards}</div>
     <div id="sin-resultados" class="empty hidden">
