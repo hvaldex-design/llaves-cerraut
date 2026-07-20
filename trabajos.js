@@ -117,7 +117,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
     <form id="form-trabajo">
       <div class="field">
         <label>Cliente</label>
-        <input name="cliente" placeholder="Nombre del cliente" value="${escapeHtml(t.cliente || "")}" required>
+        <input name="cliente" placeholder="Nombre del cliente (opcional)" value="${escapeHtml(t.cliente || "")}">
       </div>
       <div class="field">
         <label>Teléfono del cliente</label>

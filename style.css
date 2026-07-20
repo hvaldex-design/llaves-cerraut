@@ -833,3 +833,22 @@ label {
   outline: none;
   border-color: var(--copper);
 }
+
+/* ---------- Stat cards clickeables en dashboard ---------- */
+.stat-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.stat-clickable:hover {
+  border-color: var(--copper-dim);
+}
+.stat-clickable:active {
+  transform: scale(0.98);
+}
+.stat-hint {
+  font-size: 11px;
+  color: var(--copper);
+  margin: 4px 0 0;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}

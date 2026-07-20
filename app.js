@@ -4,7 +4,7 @@
 import { auth, loginWithGoogle, logout, watchAuth, watchCollection, updateItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
 import { showToast, formatDate } from "./helpers.js";
-import { renderDashboard } from "./dashboard.js";
+import { renderDashboard, renderDashboardDetail } from "./dashboard.js";
 import { getNombreTaller, getLogoTaller, setNombreTaller, setLogoTaller, renderConfigTaller } from "./taller.js";
 import {
   renderTrabajosView, renderTrabajoForm, renderTrabajoDetail,
@@ -100,7 +100,7 @@ function renderApp() {
       </div>
       <div style="display:flex;gap:4px;align-items:center;">
         <button class="topbar-action" id="btn-toggle-tema" title="Cambiar modo">
-          <i class="ti ti-${document.documentElement.dataset.tema === 'light' ? 'moon' : 'sun'}"></i>
+          <i class="ti ti-sun"></i>
         </button>
         <button class="topbar-action" id="btn-config-taller" title="Configurar taller">
           <i class="ti ti-settings"></i>
@@ -128,12 +128,15 @@ function renderApp() {
   });
 
   document.getElementById("btn-toggle-tema").addEventListener("click", () => {
-    const actual = document.documentElement.dataset.tema;
+    const actual = document.documentElement.dataset.tema || "dark";
     const nuevo = actual === "light" ? "dark" : "light";
     document.documentElement.dataset.tema = nuevo;
     localStorage.setItem("cerrauto_tema", nuevo);
-    renderApp(); // re-renderiza para actualizar ícono y topbar
-    renderCurrentView();
+    // Actualizar ícono del botón sin re-renderizar todo
+    const iconEl = document.querySelector("#btn-toggle-tema i");
+    if (iconEl) {
+      iconEl.className = nuevo === "light" ? "ti ti-moon" : "ti ti-sun";
+    }
   });
 
   document.getElementById("btn-config-taller").addEventListener("click", () => {
@@ -169,6 +172,10 @@ function renderCurrentView() {
     const fabEl = document.getElementById("fab-add");
     if (fabEl) fabEl.classList.add("hidden");
     container.innerHTML = renderDashboard(state);
+    // Stat cards clickeables
+    container.querySelectorAll("[data-dash-detail]").forEach(card => {
+      card.addEventListener("click", () => openSheet("dash-detail", card.dataset.dashDetail));
+    });
     // Último trabajo clickeable
     const cardUltimo = container.querySelector("[data-open-trabajo]");
     if (cardUltimo) {
@@ -493,6 +500,19 @@ function renderSheet() {
       openSheet("producto-detail", producto.id);
     });
     }
+
+  else if (type === "dash-detail") {
+    // id contiene el tipo: trabajos-mes, ingresos-mes, costos-mes, ganancia-mes
+    content.innerHTML = renderDashboardDetail(id, state);
+    bindCloseButtons();
+    // Trabajos dentro del detalle también son clickeables
+    content.querySelectorAll("[data-open-trabajo]").forEach(card => {
+      card.addEventListener("click", () => {
+        closeSheet();
+        setTimeout(() => openSheet("trabajo-detail", card.dataset.openTrabajo), 120);
+      });
+    });
+  }
 
   else if (type === "config-taller") {
     content.innerHTML = renderConfigTaller();
