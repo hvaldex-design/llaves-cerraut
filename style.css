@@ -149,14 +149,27 @@ label {
 }
 
 .topbar-action {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
   font-size: 13px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 6px;
+  padding: 7px;
+  width: 34px;
+  height: 34px;
+}
+
+.topbar-action i {
+  font-size: 18px;
+}
+
+.topbar-action:hover {
+  border-color: var(--copper);
+  color: var(--copper);
 }
 
 /* ---------- Main content area ---------- */
