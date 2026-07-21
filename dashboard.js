@@ -47,6 +47,9 @@ export function renderDashboard(state) {
         <div class="view-title" style="margin-bottom:2px;">Buen día 👋</div>
         <div class="view-subtitle" style="margin-bottom:0;">${MESES[mesActual]} ${anioActual}</div>
       </div>
+      <button class="btn btn-primary" id="btn-dash-nuevo-trabajo" style="width:auto;padding:10px 16px;font-size:13px;gap:6px;">
+        <i class="ti ti-plus"></i> Nuevo trabajo
+      </button>
     </div>
 
     <div class="stat-grid">

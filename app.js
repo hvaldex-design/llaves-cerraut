@@ -165,13 +165,21 @@ function renderCurrentView() {
     btn.classList.toggle("active", btn.dataset.view === state.view);
   });
 
+  // Mostrar/ocultar FAB según la vista
+  const fab = document.getElementById("fab-add");
+  if (fab) {
+    fab.classList.toggle("hidden", state.view === "inicio");
+  }
+
   const container = document.getElementById("view-container");
   if (!container) return;
 
   if (state.view === "inicio") {
-    const fabEl = document.getElementById("fab-add");
-    if (fabEl) fabEl.classList.add("hidden");
     container.innerHTML = renderDashboard(state);
+    // Botón acceso rápido nuevo trabajo
+    document.getElementById("btn-dash-nuevo-trabajo")?.addEventListener("click", () => {
+      openSheet("trabajo-form");
+    });
     // Stat cards clickeables
     container.querySelectorAll("[data-dash-detail]").forEach(card => {
       card.addEventListener("click", () => openSheet("dash-detail", card.dataset.dashDetail));
