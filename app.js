@@ -16,7 +16,8 @@ import {
 } from "./pagos.js";
 import {
   renderInventarioView, renderProductoForm, renderProductoDetail,
-  readProductoForm, saveProducto, deleteProducto, adjustStock
+  readProductoForm, saveProducto, deleteProducto, adjustStock,
+  subirFotoProducto, CATEGORIAS_CONTROL
 } from "./inventario.js";
 
 const state = {
@@ -283,32 +284,88 @@ function renderSheet() {
     content.innerHTML = renderTrabajoForm(trabajo, state.inventario);
     bindCloseButtons();
 
-    const selectControl = document.getElementById("select-control");
-    const selectEspadin = document.getElementById("select-espadin");
+    const inputControlId  = document.getElementById("input-control-id");
+    const inputEspadinId  = document.getElementById("input-espadin-id");
+    const selectEspadinFallback = document.getElementById("select-espadin-fallback");
     const selectTipoServicio = document.getElementById("select-tipo-servicio");
     const inputPincode = document.getElementById("input-pincode");
     const inputCostoTotal = document.getElementById("input-costo-total");
 
+    let ctrlCosto = 0, ctrlPila = true;
+
     function recalcularCosto() {
-      const opcionControl = selectControl.selectedOptions[0];
-      const controlCosto = opcionControl ? Number(opcionControl.dataset.costo || 0) : 0;
-      const controlUsaPila = opcionControl ? opcionControl.dataset.pila === "1" : false;
-      const espadinSeleccionado = !!selectEspadin.value;  // cualquier espadín suma $300
+      const espadinSel = !!(inputEspadinId?.value || selectEspadinFallback?.value);
       const total = calcularCostoAutomatico({
         tipoServicio: selectTipoServicio.value,
-        controlCosto,
-        controlUsaPila: selectControl.value ? controlUsaPila : false,
-        espadinSeleccionado,
-        pincode: inputPincode.value
+        controlCosto: ctrlCosto,
+        controlUsaPila: ctrlPila,
+        espadinSeleccionado: espadinSel,
+        pincode: inputPincode?.value
       });
-      inputCostoTotal.value = total;
+      if (inputCostoTotal) inputCostoTotal.value = total;
     }
 
-    [selectControl, selectEspadin, selectTipoServicio, inputPincode].forEach((el) => {
-      el.addEventListener("input", recalcularCosto);
-      el.addEventListener("change", recalcularCosto);
+    // Click en card de control
+    content.querySelectorAll("[data-ctrl-id]").forEach(card => {
+      card.addEventListener("click", () => {
+        const yaSeleccionado = inputControlId?.value === card.dataset.ctrlId;
+        content.querySelectorAll("[data-ctrl-id]").forEach(c => {
+          c.classList.remove("selected");
+          c.querySelector(".inv-selector-check")?.remove();
+        });
+        if (yaSeleccionado) {
+          if (inputControlId) inputControlId.value = "";
+          ctrlCosto = 0; ctrlPila = true;
+        } else {
+          card.classList.add("selected");
+          card.insertAdjacentHTML("beforeend", `<i class="ti ti-check inv-selector-check"></i>`);
+          if (inputControlId) inputControlId.value = card.dataset.ctrlId;
+          ctrlCosto = Number(card.dataset.ctrlCosto || 0);
+          ctrlPila = card.dataset.ctrlPila !== "0";
+        }
+        recalcularCosto();
+      });
     });
-    if (!trabajo) recalcularCosto(); // valor inicial al crear un trabajo nuevo
+
+    // Click en card de espadín
+    content.querySelectorAll("[data-esp-id]").forEach(card => {
+      card.addEventListener("click", () => {
+        const yaSeleccionado = inputEspadinId?.value === card.dataset.espId;
+        content.querySelectorAll("[data-esp-id]").forEach(c => {
+          c.classList.remove("selected");
+          c.querySelector(".inv-selector-check")?.remove();
+        });
+        if (yaSeleccionado) {
+          if (inputEspadinId) inputEspadinId.value = "";
+        } else {
+          card.classList.add("selected");
+          card.insertAdjacentHTML("beforeend", `<i class="ti ti-check inv-selector-check"></i>`);
+          if (inputEspadinId) inputEspadinId.value = card.dataset.espId;
+        }
+        recalcularCosto();
+      });
+    });
+
+    // Buscadores
+    document.getElementById("buscar-control")?.addEventListener("input", e => {
+      const q = e.target.value.toLowerCase();
+      content.querySelectorAll("[data-ctrl-id]").forEach(c => {
+        c.classList.toggle("hidden", !!q && !c.dataset.ctrlSearch?.includes(q));
+      });
+    });
+    document.getElementById("buscar-espadin")?.addEventListener("input", e => {
+      const q = e.target.value.toLowerCase();
+      content.querySelectorAll("[data-esp-id]").forEach(c => {
+        c.classList.toggle("hidden", !!q && !c.dataset.espSearch?.includes(q));
+      });
+    });
+
+    selectEspadinFallback?.addEventListener("change", recalcularCosto);
+    [selectTipoServicio, inputPincode].forEach(el => {
+      el?.addEventListener("input",  recalcularCosto);
+      el?.addEventListener("change", recalcularCosto);
+    });
+    if (!trabajo) recalcularCosto();
 
     function renderMediaTiles() {
       const grid = content.querySelector(".media-grid");
@@ -462,7 +519,8 @@ function renderSheet() {
     const usaPilaHidden = document.getElementById("usaPila-hidden");
 
     function syncCategoriaUI() {
-      campoUsaPila.classList.toggle("hidden", selectCategoria.value !== "Control remoto");
+      const esControl = CATEGORIAS_CONTROL.includes(selectCategoria.value);
+      campoUsaPila.classList.toggle("hidden", !esControl);
     }
     syncCategoriaUI();
     selectCategoria.addEventListener("change", syncCategoriaUI);
@@ -472,6 +530,35 @@ function renderSheet() {
         usaPilaButtons.forEach((x) => x.classList.toggle("active", x === b));
         usaPilaHidden.value = b.dataset.val;
       });
+    });
+
+    // Subida de foto del producto
+    const fotoZona = document.getElementById("foto-producto-zona");
+    const fotoInput = document.getElementById("foto-producto-input");
+    const fotoUrl = document.getElementById("foto-producto-url");
+    const fotoProgress = document.getElementById("foto-producto-progress");
+
+    fotoZona?.addEventListener("click", () => fotoInput?.click());
+    fotoInput?.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      fotoProgress?.classList.remove("hidden");
+      fotoProgress.textContent = "Subiendo foto...";
+      try {
+        const result = await subirFotoProducto(file, (pct) => {
+          fotoProgress.textContent = `Subiendo... ${pct}%`;
+        });
+        fotoUrl.value = result.url;
+        const placeholder = document.getElementById("foto-producto-placeholder");
+        if (placeholder) placeholder.innerHTML = `<img src="${result.url}" class="foto-producto-preview" style="width:100%;height:100%;object-fit:contain;border-radius:10px;">`;
+        const existingImg = fotoZona.querySelector("img");
+        if (existingImg) existingImg.src = result.url;
+        fotoProgress.textContent = "✓ Foto subida";
+        setTimeout(() => fotoProgress?.classList.add("hidden"), 2000);
+      } catch (err) {
+        fotoProgress.textContent = "Error al subir foto";
+        showToast("No se pudo subir la foto.", "error");
+      }
     });
 
     document.getElementById("form-producto").addEventListener("submit", async (e) => {

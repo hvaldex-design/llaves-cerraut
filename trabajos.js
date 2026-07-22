@@ -4,7 +4,7 @@
 import { addItem, updateItem, deleteItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
 import { formatCLP, formatDate, escapeHtml, showToast, todayInputValue } from "./helpers.js";
-import { descontarStockPorId } from "./inventario.js";
+import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN } from "./inventario.js";
 import { ESPADINES_CATALOGO } from "./espadines.js";
 
 export const TIPOS_SERVICIO = ["Duplicado", "Pérdida de llaves", "Llave simple", "Apertura"];
@@ -89,15 +89,51 @@ export function calcularCostoAutomatico({ tipoServicio, controlCosto, controlUsa
 
 export function renderTrabajoForm(trabajo = null, inventario = []) {
   const t = trabajo || {};
-  const controles = inventario.filter((p) => p.categoria === "Control remoto");
+  const controles = inventario.filter(p => CATEGORIAS_CONTROL.includes(p.categoria));
+  const espadinesInv = inventario.filter(p => CATEGORIAS_ESPADIN.includes(p.categoria));
 
-  const opcionesControl = controles.map((c) =>
-    `<option value="${c.id}" data-costo="${c.costoUnitario || 0}" data-pila="${c.usaPila ? "1" : "0"}" ${t.controlId === c.id ? "selected" : ""}>${escapeHtml(c.nombre)} — ${formatCLP(c.costoUnitario)}</option>`
-  ).join("");
+  // Cards de controles con foto para el selector visual
+  const controlesCardsHtml = controles.map(c => `
+    <div class="inv-selector-card ${t.controlId === c.id ? "selected" : ""}"
+         data-ctrl-id="${c.id}"
+         data-ctrl-costo="${c.costoUnitario || 0}"
+         data-ctrl-pila="${c.usaPila === false ? "0" : "1"}"
+         data-ctrl-search="${escapeHtml((c.nombre + " " + (c.compatibilidad||"")).toLowerCase())}">
+      <div class="inv-selector-img">
+        ${c.fotoUrl
+          ? `<img src="${escapeHtml(c.fotoUrl)}" alt="">`
+          : `<i class="ti ti-device-remote"></i>`}
+      </div>
+      <div class="inv-selector-info">
+        <div class="inv-selector-name">${escapeHtml(c.nombre)}</div>
+        <div class="inv-selector-compat">${escapeHtml(c.compatibilidad || "")}</div>
+        <div class="inv-selector-price">${formatCLP(c.costoUnitario)}</div>
+      </div>
+      ${t.controlId === c.id ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
+    </div>
+  `).join("");
 
-  // Espadines del catálogo, con su compatibilidad
+  // Cards de espadines con foto
+  const espadinesCardsHtml = espadinesInv.map(e => `
+    <div class="inv-selector-card ${(t.espadinCodigo === e.id || t.espadinId === e.id) ? "selected" : ""}"
+         data-esp-id="${e.id}"
+         data-esp-search="${escapeHtml((e.nombre + " " + (e.compatibilidad||"")).toLowerCase())}">
+      <div class="inv-selector-img">
+        ${e.fotoUrl
+          ? `<img src="${escapeHtml(e.fotoUrl)}" alt="">`
+          : `<i class="ti ti-key"></i>`}
+      </div>
+      <div class="inv-selector-info">
+        <div class="inv-selector-name">${escapeHtml(e.nombre)}</div>
+        <div class="inv-selector-compat">${escapeHtml(e.compatibilidad || "")}</div>
+      </div>
+      ${(t.espadinCodigo === e.id || t.espadinId === e.id) ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
+    </div>
+  `).join("");
+
+  // Fallback espadines del catálogo si no hay espadines en inventario
   const opcionesEspadin = ESPADINES_CATALOGO.map((e) =>
-    `<option value="${e.codigo}" ${t.espadinCodigo === e.codigo || t.espadinId === e.codigo ? "selected" : ""}>${escapeHtml(e.codigo)} — ${escapeHtml(e.marcas)}</option>`
+    `<option value="${e.codigo}" ${t.espadinCodigo === e.codigo ? "selected" : ""}>${escapeHtml(e.codigo)} — ${escapeHtml(e.marcas)}</option>`
   ).join("");
 
   const media = t.media || [];
@@ -163,18 +199,36 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
 
       <div class="field">
         <label>Tipo de control <span style="color:var(--text-muted)">(opcional)</span></label>
-        <select name="controlId" id="select-control">
-          <option value="">Sin control</option>
-          ${opcionesControl}
-        </select>
+        <input type="hidden" name="controlId" id="input-control-id" value="${escapeHtml(t.controlId || "")}">
+        ${controles.length ? `
+          <div class="inv-selector-search-box">
+            <i class="ti ti-search"></i>
+            <input type="search" id="buscar-control" placeholder="Buscar control..." autocomplete="off">
+          </div>
+          <div class="inv-selector-grid" id="grid-controles">
+            ${controlesCardsHtml || '<p style="color:var(--text-muted);font-size:13px;padding:10px 0;">Sin resultados.</p>'}
+          </div>
+        ` : `<p style="color:var(--text-muted);font-size:13px;">No hay controles en el inventario. Agrégalos desde Stock.</p>`}
       </div>
 
       <div class="field">
         <label>Espadín <span style="color:var(--text-muted)">(opcional — +$300 automático)</span></label>
-        <select name="espadinCodigo" id="select-espadin">
-          <option value="">Sin espadín</option>
-          ${opcionesEspadin}
-        </select>
+        <input type="hidden" name="espadinCodigo" id="input-espadin-id" value="${escapeHtml(t.espadinCodigo || t.espadinId || "")}">
+        ${espadinesInv.length ? `
+          <div class="inv-selector-search-box">
+            <i class="ti ti-search"></i>
+            <input type="search" id="buscar-espadin" placeholder="Buscar espadín..." autocomplete="off">
+          </div>
+          <div class="inv-selector-grid" id="grid-espadines">
+            ${espadinesCardsHtml}
+          </div>
+        ` : `
+          <select name="espadinCodigo" id="select-espadin-fallback">
+            <option value="">Sin espadín</option>
+            ${opcionesEspadin}
+          </select>
+          <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Agrega espadines al inventario para verlos con foto aquí.</p>
+        `}
       </div>
 
       <div class="field">

@@ -1,18 +1,32 @@
 // ============================================================
-// inventario.js — vista de Inventario
+// inventario.js — Inventario agrupado por categoría con fotos
 // ============================================================
 import { addItem, updateItem, deleteItem } from "./firebase.js";
+import { uploadMedia } from "./cloudinary.js";
 import { formatCLP, escapeHtml, showToast } from "./helpers.js";
 
-export const CATEGORIAS = ["Control remoto", "Espadín", "Llave virgen", "Batería / Pila", "Carcasa", "Otro"];
+export const CATEGORIAS = [
+  "Control Xhorse",
+  "Control KD",
+  "Control Genérico",
+  "Espadín",
+  "Carcasa",
+  "Llave virgen",
+  "Pila / Batería",
+  "Otro"
+];
+
+// Categorías que son controles remotos (para lógica de pila y selector)
+export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico"];
+export const CATEGORIAS_ESPADIN = ["Espadín"];
 
 export function renderInventarioView(state) {
   const { inventario } = state;
 
   if (!inventario.length) {
     return `
-      <div class="view-title">Inventario</div>
-      <div class="view-subtitle">Tu stock de llaves, controles y repuestos</div>
+      <div class="view-title">Stock</div>
+      <div class="view-subtitle">Tu inventario de insumos</div>
       <div class="empty">
         <i class="ti ti-box"></i>
         <p>Todavía no tienes productos en inventario.<br>Toca el botón + para agregar el primero.</p>
@@ -20,37 +34,59 @@ export function renderInventarioView(state) {
     `;
   }
 
-  const bajoStock = inventario.filter(p => Number(p.stock) <= Number(p.stockMinimo));
+  // Agrupar por categoría
+  const grupos = {};
+  for (const cat of CATEGORIAS) grupos[cat] = [];
+  for (const p of inventario) {
+    const cat = p.categoria || "Otro";
+    if (!grupos[cat]) grupos[cat] = [];
+    grupos[cat].push(p);
+  }
 
-  const rows = inventario.map((p) => {
-    const isBajo = Number(p.stock) <= Number(p.stockMinimo);
-    return `
-      <div class="card" data-open-producto="${p.id}">
+  const bajosStock = inventario.filter(p => Number(p.stock) <= Number(p.stockMinimo));
+
+  let html = `
+    <div class="view-title">Stock</div>
+    <div class="view-subtitle">${inventario.length} producto${inventario.length === 1 ? "" : "s"} en inventario</div>
+  `;
+
+  if (bajosStock.length) {
+    html += `
+      <div class="card" style="border-color:var(--danger);background:var(--danger-bg);margin-bottom:14px;">
         <div class="card-row">
-          <div>
-            <p class="card-title">${escapeHtml(p.nombre)}</p>
-            <p class="card-meta">${escapeHtml(p.categoria || "")} ${p.compatibilidad ? "· " + escapeHtml(p.compatibilidad) : ""}</p>
-          </div>
-          <div style="text-align:right">
-            <span class="badge ${isBajo ? "danger" : "ok"}">${p.stock} en stock</span>
-          </div>
+          <p class="card-meta" style="color:var(--danger);margin:0;">
+            <i class="ti ti-alert-triangle"></i> ${bajosStock.length} producto${bajosStock.length === 1 ? "" : "s"} con stock bajo
+          </p>
         </div>
       </div>
     `;
-  }).join("");
+  }
 
-  return `
-    <div class="view-title">Inventario</div>
-    <div class="view-subtitle">${inventario.length} producto${inventario.length === 1 ? "" : "s"} registrado${inventario.length === 1 ? "" : "s"}</div>
-    ${bajoStock.length ? `
-      <div class="card" style="border-color: var(--danger); background: var(--danger-bg);">
-        <div class="card-row">
-          <p class="card-meta" style="color: var(--danger); margin:0;"><i class="ti ti-alert-triangle"></i> ${bajoStock.length} producto${bajoStock.length === 1 ? "" : "s"} con stock bajo</p>
+  for (const [cat, items] of Object.entries(grupos)) {
+    if (!items.length) continue;
+    html += `<div class="inv-group-title">${escapeHtml(cat)} <span class="inv-group-count">${items.length}</span></div>`;
+    html += `<div class="inv-grid">`;
+    for (const p of items) {
+      const isBajo = Number(p.stock) <= Number(p.stockMinimo);
+      html += `
+        <div class="inv-card" data-open-producto="${p.id}">
+          <div class="inv-card-img">
+            ${p.fotoUrl
+              ? `<img src="${escapeHtml(p.fotoUrl)}" alt="${escapeHtml(p.nombre)}">`
+              : `<div class="inv-card-noimg"><i class="ti ti-${CATEGORIAS_CONTROL.includes(p.categoria) ? 'device-remote' : p.categoria === 'Espadín' ? 'key' : 'box'}"></i></div>`}
+            <span class="inv-stock-badge ${isBajo ? 'danger' : 'ok'}">${p.stock}</span>
+          </div>
+          <div class="inv-card-body">
+            <p class="inv-card-name">${escapeHtml(p.nombre)}</p>
+            ${p.compatibilidad ? `<p class="inv-card-compat">${escapeHtml(p.compatibilidad.slice(0,30))}${p.compatibilidad.length > 30 ? "…" : ""}</p>` : ""}
+          </div>
         </div>
-      </div>
-    ` : ""}
-    ${rows}
-  `;
+      `;
+    }
+    html += `</div>`;
+  }
+
+  return html;
 }
 
 export function renderProductoForm(producto = null) {
@@ -63,54 +99,75 @@ export function renderProductoForm(producto = null) {
       <button class="sheet-close" data-close-sheet><i class="ti ti-x"></i></button>
     </div>
     <form id="form-producto">
+
       <div class="field">
-        <label>Nombre del producto</label>
-        <input name="nombre" placeholder="Xhorse XNDS00EN" value="${escapeHtml(p.nombre || "")}" required>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Categoría</label>
-          <select name="categoria" id="select-categoria">
-            ${CATEGORIAS.map((c) => `<option value="${c}" ${categoriaActual === c ? "selected" : ""}>${c}</option>`).join("")}
-          </select>
+        <label>Foto del producto</label>
+        <div class="foto-producto-upload" id="foto-producto-zona">
+          ${p.fotoUrl
+            ? `<img src="${escapeHtml(p.fotoUrl)}" id="foto-producto-preview" class="foto-producto-preview">`
+            : `<div class="foto-producto-placeholder" id="foto-producto-placeholder">
+                <i class="ti ti-camera"></i>
+                <span>Subir foto</span>
+               </div>`}
+          <input type="file" id="foto-producto-input" accept="image/*" style="display:none">
+          <input type="hidden" name="fotoUrl" id="foto-producto-url" value="${escapeHtml(p.fotoUrl || "")}">
         </div>
-        <div class="field">
-          <label>Compatible con</label>
-          <input name="compatibilidad" placeholder="Toyota / Lexus" value="${escapeHtml(p.compatibilidad || "")}">
-        </div>
+        <div id="foto-producto-progress" class="hidden" style="font-size:12px;color:var(--copper);margin-top:6px;text-align:center;">Subiendo foto...</div>
       </div>
+
+      <div class="field">
+        <label>Categoría</label>
+        <select name="categoria" id="select-categoria">
+          ${CATEGORIAS.map(c => `<option value="${c}" ${categoriaActual === c ? "selected" : ""}>${c}</option>`).join("")}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Nombre / Código del producto</label>
+        <input name="nombre" placeholder="Ej: XKHY05EN, KD-B31, TOY43R..." value="${escapeHtml(p.nombre || "")}" required>
+      </div>
+
+      <div class="field">
+        <label>Compatible con</label>
+        <input name="compatibilidad" placeholder="Ej: Toyota, Hyundai, Kia..." value="${escapeHtml(p.compatibilidad || "")}">
+      </div>
+
       <div class="field hidden" id="campo-usa-pila">
         <label>¿Este control usa pila CR2032?</label>
         <div class="segmented" id="usaPila-segmented">
-          <button type="button" data-val="si" class="${p.usaPila ? "active" : ""}">Sí</button>
-          <button type="button" data-val="no" class="${!p.usaPila ? "active" : ""}">No</button>
+          <button type="button" data-val="si" class="${p.usaPila !== false ? "active" : ""}">Sí</button>
+          <button type="button" data-val="no" class="${p.usaPila === false ? "active" : ""}">No</button>
         </div>
-        <input type="hidden" name="usaPila" id="usaPila-hidden" value="${p.usaPila ? "si" : "no"}">
+        <input type="hidden" name="usaPila" id="usaPila-hidden" value="${p.usaPila === false ? "no" : "si"}">
       </div>
+
       <div class="field-row">
         <div class="field">
           <label>Stock actual</label>
-          <input type="number" name="stock" placeholder="8" value="${p.stock ?? ""}" required min="0" step="1">
+          <input type="number" name="stock" placeholder="0" value="${p.stock ?? ""}" required min="0" step="1">
         </div>
         <div class="field">
           <label>Stock mínimo</label>
-          <input type="number" name="stockMinimo" placeholder="3" value="${p.stockMinimo ?? ""}" min="0" step="1">
+          <input type="number" name="stockMinimo" placeholder="1" value="${p.stockMinimo ?? ""}" min="0" step="1">
         </div>
       </div>
+
       <div class="field-row">
         <div class="field">
           <label>Costo unitario</label>
-          <input type="number" name="costoUnitario" placeholder="7000" value="${p.costoUnitario ?? ""}" min="0" step="1">
+          <input type="number" name="costoUnitario" placeholder="0" value="${p.costoUnitario ?? ""}" min="0" step="1">
         </div>
         <div class="field">
           <label>Precio de venta</label>
-          <input type="number" name="precioVenta" placeholder="15000" value="${p.precioVenta ?? ""}" min="0" step="1">
+          <input type="number" name="precioVenta" placeholder="0" value="${p.precioVenta ?? ""}" min="0" step="1">
         </div>
       </div>
+
       <div class="field">
         <label>Proveedor</label>
         <input name="proveedor" placeholder="Nombre del proveedor" value="${escapeHtml(p.proveedor || "")}">
       </div>
+
       <button type="submit" class="btn btn-primary">
         <i class="ti ti-check"></i> ${producto ? "Guardar cambios" : "Agregar producto"}
       </button>
@@ -128,19 +185,24 @@ export function renderProductoDetail(p) {
       <button class="sheet-close" data-close-sheet><i class="ti ti-x"></i></button>
     </div>
 
+    ${p.fotoUrl ? `
+      <div style="text-align:center;margin-bottom:16px;">
+        <img src="${escapeHtml(p.fotoUrl)}" style="width:140px;height:140px;object-fit:contain;border-radius:12px;border:1px solid var(--border);background:var(--bg-input);">
+      </div>` : ""}
+
     <div class="detail-header">
       <span class="badge ${isBajo ? "danger" : "ok"}">${isBajo ? "Stock bajo" : "Stock ok"}</span>
     </div>
 
     <div class="kv-row"><span class="kv-label">Producto</span><span class="kv-value">${escapeHtml(p.nombre)}</span></div>
     <div class="kv-row"><span class="kv-label">Categoría</span><span class="kv-value">${escapeHtml(p.categoria || "—")}</span></div>
-    ${p.categoria === "Control remoto" ? `<div class="kv-row"><span class="kv-label">¿Usa pila CR2032?</span><span class="kv-value">${p.usaPila ? "Sí" : "No"}</span></div>` : ""}
+    ${CATEGORIAS_CONTROL.includes(p.categoria) ? `<div class="kv-row"><span class="kv-label">¿Usa pila CR2032?</span><span class="kv-value">${p.usaPila === false ? "No" : "Sí"}</span></div>` : ""}
     <div class="kv-row"><span class="kv-label">Compatible con</span><span class="kv-value">${escapeHtml(p.compatibilidad || "—")}</span></div>
     <div class="kv-row"><span class="kv-label">Stock actual</span><span class="kv-value mono">${p.stock}</span></div>
     <div class="kv-row"><span class="kv-label">Stock mínimo</span><span class="kv-value mono">${p.stockMinimo ?? 0}</span></div>
     <div class="kv-row"><span class="kv-label">Costo unitario</span><span class="kv-value mono">${formatCLP(p.costoUnitario)}</span></div>
     <div class="kv-row"><span class="kv-label">Precio de venta</span><span class="kv-value mono">${formatCLP(p.precioVenta)}</span></div>
-    <div class="kv-row"><span class="kv-label">Margen estimado</span><span class="kv-value mono" style="color: var(--ok)">${formatCLP(margen)}</span></div>
+    <div class="kv-row"><span class="kv-label">Margen estimado</span><span class="kv-value mono" style="color:var(--ok)">${formatCLP(margen)}</span></div>
     <div class="kv-row"><span class="kv-label">Proveedor</span><span class="kv-value">${escapeHtml(p.proveedor || "—")}</span></div>
 
     <div class="detail-section-title">Ajustar stock</div>
@@ -163,7 +225,8 @@ export function readProductoForm(form) {
     nombre: fd.get("nombre")?.trim() || "",
     categoria: fd.get("categoria")?.trim() || "",
     compatibilidad: fd.get("compatibilidad")?.trim() || "",
-    usaPila: fd.get("usaPila") === "si",
+    usaPila: fd.get("usaPila") !== "no",
+    fotoUrl: fd.get("fotoUrl") || "",
     stock: Number(fd.get("stock")) || 0,
     stockMinimo: Number(fd.get("stockMinimo")) || 0,
     costoUnitario: Number(fd.get("costoUnitario")) || 0,
@@ -192,10 +255,13 @@ export async function adjustStock(uidUser, producto, delta) {
   await updateItem(uidUser, "inventario", producto.id, { stock: nuevoStock });
 }
 
-// Descuenta 1 unidad de stock de un producto por su id (usado al crear un trabajo)
 export async function descontarStockPorId(uidUser, inventario, productoId) {
-  const producto = inventario.find((p) => p.id === productoId);
+  const producto = inventario.find(p => p.id === productoId);
   if (!producto) return;
   const nuevoStock = Math.max(0, Number(producto.stock) - 1);
   await updateItem(uidUser, "inventario", productoId, { stock: nuevoStock });
+}
+
+export async function subirFotoProducto(file, onProgress) {
+  return uploadMedia(file, onProgress);
 }
