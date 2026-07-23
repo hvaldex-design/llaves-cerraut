@@ -4,7 +4,7 @@
 import { addItem, updateItem, deleteItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
 import { formatCLP, formatDate, escapeHtml, showToast, todayInputValue } from "./helpers.js";
-import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN, getCategoriaTransponder } from "./inventario.js";
+import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN } from "./inventario.js";
 import { ESPADINES_CATALOGO } from "./espadines.js";
 
 export const TIPOS_SERVICIO = ["Duplicado", "Pérdida de llaves", "Llave simple", "Apertura"];
@@ -91,12 +91,10 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
   const t = trabajo || {};
   const controles = inventario.filter(p => CATEGORIAS_CONTROL.includes(p.categoria));
   const espadinesInv = inventario.filter(p => CATEGORIAS_ESPADIN.includes(p.categoria));
-  const catTransponder = getCategoriaTransponder(inventario);
-  // Comparación robusta: trim + lowercase para capturar "CHIP", "chip", " Chip ", etc.
-  const transpondersInv = inventario.filter(p => {
-    const cat = (p.categoria || "").trim().toLowerCase();
-    return catTransponder.some(c => c.trim().toLowerCase() === cat);
-  });
+  // Mostrar TODOS los productos con categoría "CHIP" (case-insensitive + trim)
+  const transpondersInv = inventario.filter(p =>
+    (p.categoria || "").trim().toUpperCase() === "CHIP"
+  );
 
   // Cards de controles con foto para el selector visual
   const controlesCardsHtml = controles.map(c => `
@@ -219,7 +217,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
             <i class="ti ti-search"></i>
             <input type="search" id="buscar-transponder" placeholder="Buscar chip/transponder..." autocomplete="off">
           </div>
-          <div class="inv-selector-grid" id="grid-transponders">
+          <div class="inv-selector-grid inv-selector-grid-chips" id="grid-transponders">
             ${transpondersCardsHtml}
           </div>
         ` : `<p style="color:var(--text-muted);font-size:13px;">No hay chips/transponders en el stock. Agrégalos desde Stock con categoría "Llave virgen".</p>`}

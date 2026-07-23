@@ -1125,3 +1125,10 @@ label {
   object-fit: contain;
   padding: 6px;
 }
+
+/* Grid de chips en formulario de trabajo — 1 columna, sin límite de alto */
+.inv-selector-grid-chips {
+  grid-template-columns: 1fr;
+  max-height: none;
+  overflow-y: visible;
+}
