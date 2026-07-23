@@ -17,7 +17,7 @@ import {
 import {
   renderInventarioView, renderProductoForm, renderProductoDetail,
   readProductoForm, saveProducto, deleteProducto, adjustStock,
-  subirFotoProducto, CATEGORIAS_CONTROL
+  subirFotoProducto, CATEGORIAS_CONTROL, CATEGORIAS_TRANSPONDER
 } from "./inventario.js";
 
 const state = {
@@ -291,7 +291,7 @@ function renderSheet() {
     const inputPincode = document.getElementById("input-pincode");
     const inputCostoTotal = document.getElementById("input-costo-total");
 
-    let ctrlCosto = 0, ctrlPila = true;
+    let ctrlCosto = 0, ctrlPila = false;
 
     function recalcularCosto() {
       const espadinSel = !!(inputEspadinId?.value || selectEspadinFallback?.value);
@@ -346,6 +346,25 @@ function renderSheet() {
       });
     });
 
+    // Click en card de transponder
+    const inputTransponderId = document.getElementById("input-transponder-id");
+    content.querySelectorAll("[data-tr-id]").forEach(card => {
+      card.addEventListener("click", () => {
+        const yaSeleccionado = inputTransponderId?.value === card.dataset.trId;
+        content.querySelectorAll("[data-tr-id]").forEach(c => {
+          c.classList.remove("selected");
+          c.querySelector(".inv-selector-check")?.remove();
+        });
+        if (yaSeleccionado) {
+          if (inputTransponderId) inputTransponderId.value = "";
+        } else {
+          card.classList.add("selected");
+          card.insertAdjacentHTML("beforeend", `<i class="ti ti-check inv-selector-check"></i>`);
+          if (inputTransponderId) inputTransponderId.value = card.dataset.trId;
+        }
+      });
+    });
+
     // Buscadores
     document.getElementById("buscar-control")?.addEventListener("input", e => {
       const q = e.target.value.toLowerCase();
@@ -357,6 +376,12 @@ function renderSheet() {
       const q = e.target.value.toLowerCase();
       content.querySelectorAll("[data-esp-id]").forEach(c => {
         c.classList.toggle("hidden", !!q && !c.dataset.espSearch?.includes(q));
+      });
+    });
+    document.getElementById("buscar-transponder")?.addEventListener("input", e => {
+      const q = e.target.value.toLowerCase();
+      content.querySelectorAll("[data-tr-id]").forEach(c => {
+        c.classList.toggle("hidden", !!q && !c.dataset.trSearch?.includes(q));
       });
     });
 
@@ -518,9 +543,14 @@ function renderSheet() {
     const usaPilaButtons = content.querySelectorAll("#usaPila-segmented button");
     const usaPilaHidden = document.getElementById("usaPila-hidden");
 
+    const inputCatNueva = document.getElementById("input-categoria-nueva");
+
     function syncCategoriaUI() {
       const esControl = CATEGORIAS_CONTROL.includes(selectCategoria.value);
+      const esNueva = selectCategoria.value === "__nueva__";
       campoUsaPila.classList.toggle("hidden", !esControl);
+      inputCatNueva?.classList.toggle("hidden", !esNueva);
+      if (esNueva) inputCatNueva?.focus();
     }
     syncCategoriaUI();
     selectCategoria.addEventListener("change", syncCategoriaUI);

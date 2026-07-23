@@ -17,8 +17,9 @@ export const CATEGORIAS = [
 ];
 
 // Categorías que son controles remotos (para lógica de pila y selector)
-export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico"];
+export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico", "Control remoto"];
 export const CATEGORIAS_ESPADIN = ["Espadín"];
+export const CATEGORIAS_TRANSPONDER = ["Llave virgen"];
 
 export function renderInventarioView(state) {
   const { inventario } = state;
@@ -119,7 +120,12 @@ export function renderProductoForm(producto = null) {
         <label>Categoría</label>
         <select name="categoria" id="select-categoria">
           ${CATEGORIAS.map(c => `<option value="${c}" ${categoriaActual === c ? "selected" : ""}>${c}</option>`).join("")}
+          <option value="__nueva__">+ Nueva categoría...</option>
         </select>
+        <input type="text" name="categoriaNueva" id="input-categoria-nueva"
+               placeholder="Escribe el nombre de la nueva categoría"
+               class="hidden" style="margin-top:8px;"
+               value="">
       </div>
 
       <div class="field">
@@ -221,9 +227,11 @@ export function renderProductoDetail(p) {
 
 export function readProductoForm(form) {
   const fd = new FormData(form);
+  const catSelect = fd.get("categoria")?.trim() || "";
+  const catNueva = fd.get("categoriaNueva")?.trim() || "";
   return {
     nombre: fd.get("nombre")?.trim() || "",
-    categoria: fd.get("categoria")?.trim() || "",
+    categoria: catSelect === "__nueva__" ? catNueva : catSelect,
     compatibilidad: fd.get("compatibilidad")?.trim() || "",
     usaPila: fd.get("usaPila") !== "no",
     fotoUrl: fd.get("fotoUrl") || "",

@@ -4,7 +4,7 @@
 import { addItem, updateItem, deleteItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
 import { formatCLP, formatDate, escapeHtml, showToast, todayInputValue } from "./helpers.js";
-import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN } from "./inventario.js";
+import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN, CATEGORIAS_TRANSPONDER } from "./inventario.js";
 import { ESPADINES_CATALOGO } from "./espadines.js";
 
 export const TIPOS_SERVICIO = ["Duplicado", "Pérdida de llaves", "Llave simple", "Apertura"];
@@ -91,6 +91,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
   const t = trabajo || {};
   const controles = inventario.filter(p => CATEGORIAS_CONTROL.includes(p.categoria));
   const espadinesInv = inventario.filter(p => CATEGORIAS_ESPADIN.includes(p.categoria));
+  const transpondersInv = inventario.filter(p => CATEGORIAS_TRANSPONDER.includes(p.categoria));
 
   // Cards de controles con foto para el selector visual
   const controlesCardsHtml = controles.map(c => `
@@ -110,6 +111,25 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
         <div class="inv-selector-price">${formatCLP(c.costoUnitario)}</div>
       </div>
       ${t.controlId === c.id ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
+    </div>
+  `).join("");
+
+  // Cards de transponders/chips con foto
+  const transpondersCardsHtml = transpondersInv.map(tr => `
+    <div class="inv-selector-card ${t.transponderInvId === tr.id ? "selected" : ""}"
+         data-tr-id="${tr.id}"
+         data-tr-search="${escapeHtml((tr.nombre + " " + (tr.compatibilidad||"")).toLowerCase())}">
+      <div class="inv-selector-img">
+        ${tr.fotoUrl
+          ? `<img src="${escapeHtml(tr.fotoUrl)}" alt="">`
+          : `<i class="ti ti-key-filled"></i>`}
+      </div>
+      <div class="inv-selector-info">
+        <div class="inv-selector-name">${escapeHtml(tr.nombre)}</div>
+        <div class="inv-selector-compat">${escapeHtml(tr.compatibilidad || "")}</div>
+        <div class="inv-selector-price">${formatCLP(tr.costoUnitario)}</div>
+      </div>
+      ${t.transponderInvId === tr.id ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
     </div>
   `).join("");
 
@@ -182,8 +202,22 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
       </div>
 
       <div class="field">
-        <label>Sistema / transponder</label>
-        <input name="sistema" placeholder="Texas DST80, 4D60, etc." value="${escapeHtml(t.sistema || "")}">
+        <label>Sistema / transponder <span style="color:var(--text-muted)">(chip generado — texto libre)</span></label>
+        <input name="sistema" placeholder="Texas DST80, 4D60, Texas Crypto..." value="${escapeHtml(t.sistema || "")}">
+      </div>
+
+      <div class="field">
+        <label>Transponder / chip <span style="color:var(--text-muted)">(seleccionar del stock — descuenta automático)</span></label>
+        <input type="hidden" name="transponderInvId" id="input-transponder-id" value="${escapeHtml(t.transponderInvId || "")}">
+        ${transpondersInv.length ? `
+          <div class="inv-selector-search-box">
+            <i class="ti ti-search"></i>
+            <input type="search" id="buscar-transponder" placeholder="Buscar chip/transponder..." autocomplete="off">
+          </div>
+          <div class="inv-selector-grid" id="grid-transponders">
+            ${transpondersCardsHtml}
+          </div>
+        ` : `<p style="color:var(--text-muted);font-size:13px;">No hay chips/transponders en el stock. Agrégalos desde Stock con categoría "Llave virgen".</p>`}
       </div>
 
       <div class="field-row">
@@ -300,6 +334,7 @@ export function renderTrabajoDetail(trabajo) {
     <div class="kv-row"><span class="kv-label">Vehículo</span><span class="kv-value">${escapeHtml(t.vehiculoMarca)} ${escapeHtml(t.vehiculoModelo)} ${t.vehiculoAnio ? "(" + escapeHtml(t.vehiculoAnio) + ")" : ""}</span></div>
     <div class="kv-row"><span class="kv-label">Servicio</span><span class="kv-value">${escapeHtml(t.tipoServicio || "—")}</span></div>
     <div class="kv-row"><span class="kv-label">Sistema</span><span class="kv-value">${escapeHtml(t.sistema || "—")}</span></div>
+    ${t.transponderInvId ? `<div class="kv-row"><span class="kv-label">Chip usado (stock)</span><span class="kv-value" style="color:var(--ok)"><i class="ti ti-key-filled"></i> Descontado del inventario</span></div>` : ""}
     <div class="kv-row"><span class="kv-label">FCC ID</span><span class="kv-value mono">${escapeHtml(t.fccId || "—")}</span></div>
     <div class="kv-row"><span class="kv-label">Frecuencia</span><span class="kv-value">${escapeHtml(t.frecuencia || "—")}</span></div>
     <div class="kv-row"><span class="kv-label">Fecha</span><span class="kv-value">${formatDate(t.fecha)}</span></div>
@@ -340,6 +375,7 @@ export function readTrabajoForm(form) {
     vehiculoAnio: fd.get("vehiculoAnio")?.trim() || "",
     tipoServicio: fd.get("tipoServicio") || TIPOS_SERVICIO[0],
     sistema: fd.get("sistema")?.trim() || "",
+    transponderInvId: fd.get("transponderInvId") || "",
     fccId: fd.get("fccId")?.trim() || "",
     frecuencia: fd.get("frecuencia")?.trim() || "",
     controlId: fd.get("controlId") || "",
@@ -358,6 +394,7 @@ export async function saveTrabajo(uidUser, data, inventario, existingId = null, 
   if (!existingId) {
     if (data.controlId) await descontarStockPorId(uidUser, inventario, data.controlId);
     if (data.espadinId) await descontarStockPorId(uidUser, inventario, data.espadinId);
+    if (data.transponderInvId) await descontarStockPorId(uidUser, inventario, data.transponderInvId);
     // Descuenta también la pila si corresponde
     const control = inventario.find((p) => p.id === data.controlId);
     if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) {
