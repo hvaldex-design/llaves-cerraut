@@ -549,8 +549,11 @@ function renderSheet() {
       const esControl = CATEGORIAS_CONTROL.includes(selectCategoria.value);
       const esNueva = selectCategoria.value === "__nueva__";
       campoUsaPila.classList.toggle("hidden", !esControl);
-      inputCatNueva?.classList.toggle("hidden", !esNueva);
-      if (esNueva) inputCatNueva?.focus();
+      // Usar display:none directamente para evitar conflictos con clase hidden
+      if (inputCatNueva) {
+        inputCatNueva.style.display = esNueva ? "block" : "none";
+        if (esNueva) inputCatNueva.focus();
+      }
     }
     syncCategoriaUI();
     selectCategoria.addEventListener("change", syncCategoriaUI);

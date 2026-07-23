@@ -91,8 +91,12 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
   const t = trabajo || {};
   const controles = inventario.filter(p => CATEGORIAS_CONTROL.includes(p.categoria));
   const espadinesInv = inventario.filter(p => CATEGORIAS_ESPADIN.includes(p.categoria));
-  const catTransponder = getCategoriaTransponder();
-  const transpondersInv = inventario.filter(p => catTransponder.some(c => c.toLowerCase() === (p.categoria||"").toLowerCase()));
+  const catTransponder = getCategoriaTransponder(inventario);
+  // Comparación robusta: trim + lowercase para capturar "CHIP", "chip", " Chip ", etc.
+  const transpondersInv = inventario.filter(p => {
+    const cat = (p.categoria || "").trim().toLowerCase();
+    return catTransponder.some(c => c.trim().toLowerCase() === cat);
+  });
 
   // Cards de controles con foto para el selector visual
   const controlesCardsHtml = controles.map(c => `

@@ -23,10 +23,27 @@ export const CATEGORIAS_TRANSPONDER_BASE = ["Llave virgen", "CHIP", "Chip", "chi
 
 // Devuelve todas las categorías que son transponder:
 // las base + las categorías personalizadas guardadas que el usuario marcó como chip
-export function getCategoriaTransponder() {
+export function getCategoriaTransponder(inventario = []) {
   try {
-    const saved = JSON.parse(localStorage.getItem("cerrauto_cat_transponder") || "[]");
-    return [...new Set([...CATEGORIAS_TRANSPONDER_BASE, ...saved])];
+    const saved = JSON.parse(localStorage.getItem("cerrauto_categorias_custom") || "[]");
+    // Incluir también todas las categorías del inventario real que no son controles, espadines ni pilas
+    const catsFijas = new Set([
+      ...CATEGORIAS_TRANSPONDER_BASE.map(c => c.toLowerCase()),
+      ...saved.map(c => c.toLowerCase())
+    ]);
+    // Agregar categorías del inventario que coincidan (por si el usuario usó CHIP, chip, Chip...)
+    const catsInventario = [...new Set(inventario.map(p => (p.categoria||"").trim()))]
+      .filter(c => {
+        const cl = c.toLowerCase();
+        // Es transponder si no es control, espadín, carcasa, pila, ni genérico sin más
+        return !["control xhorse","control kd","control genérico","control remoto",
+                 "espadín","espadin","carcasa","pila / batería","pila/batería",
+                 "pila","batería","otro"].includes(cl)
+               && c !== "";
+      });
+    // Combinar todo
+    const todas = [...new Set([...CATEGORIAS_TRANSPONDER_BASE, ...saved, ...catsInventario])];
+    return todas;
   } catch { return CATEGORIAS_TRANSPONDER_BASE; }
 }
 
@@ -143,7 +160,7 @@ export function renderProductoForm(producto = null) {
         </select>
         <input type="text" name="categoriaNueva" id="input-categoria-nueva"
                placeholder="Escribe el nombre de la nueva categoría"
-               class="hidden" style="margin-top:8px;"
+               style="margin-top:8px;display:none;"
                value="">
       </div>
 
