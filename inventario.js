@@ -19,7 +19,18 @@ export const CATEGORIAS = [
 // Categorías que son controles remotos (para lógica de pila y selector)
 export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico", "Control remoto"];
 export const CATEGORIAS_ESPADIN = ["Espadín"];
-export const CATEGORIAS_TRANSPONDER = ["Llave virgen"];
+export const CATEGORIAS_TRANSPONDER_BASE = ["Llave virgen", "CHIP", "Chip", "chip"];
+
+// Devuelve todas las categorías que son transponder:
+// las base + las categorías personalizadas guardadas que el usuario marcó como chip
+export function getCategoriaTransponder() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("cerrauto_cat_transponder") || "[]");
+    return [...new Set([...CATEGORIAS_TRANSPONDER_BASE, ...saved])];
+  } catch { return CATEGORIAS_TRANSPONDER_BASE; }
+}
+
+export const CATEGORIAS_TRANSPONDER = CATEGORIAS_TRANSPONDER_BASE;
 
 export function renderInventarioView(state) {
   const { inventario } = state;
@@ -119,7 +130,15 @@ export function renderProductoForm(producto = null) {
       <div class="field">
         <label>Categoría</label>
         <select name="categoria" id="select-categoria">
-          ${CATEGORIAS.map(c => `<option value="${c}" ${categoriaActual === c ? "selected" : ""}>${c}</option>`).join("")}
+          ${(() => {
+            try {
+              const custom = JSON.parse(localStorage.getItem("cerrauto_categorias_custom") || "[]");
+              const todas = [...new Set([...CATEGORIAS, ...custom])];
+              return todas.map(c => `<option value="${c}" ${categoriaActual === c ? "selected" : ""}>${c}</option>`).join("");
+            } catch {
+              return CATEGORIAS.map(c => `<option value="${c}" ${categoriaActual === c ? "selected" : ""}>${c}</option>`).join("");
+            }
+          })()}
           <option value="__nueva__">+ Nueva categoría...</option>
         </select>
         <input type="text" name="categoriaNueva" id="input-categoria-nueva"
@@ -229,9 +248,22 @@ export function readProductoForm(form) {
   const fd = new FormData(form);
   const catSelect = fd.get("categoria")?.trim() || "";
   const catNueva = fd.get("categoriaNueva")?.trim() || "";
+  const categoriaFinal = catSelect === "__nueva__" ? catNueva : catSelect;
+
+  // Guardar la categoría nueva en localStorage para que aparezca en próximas veces
+  if (catSelect === "__nueva__" && catNueva) {
+    try {
+      const saved = JSON.parse(localStorage.getItem("cerrauto_categorias_custom") || "[]");
+      if (!saved.includes(catNueva)) {
+        saved.push(catNueva);
+        localStorage.setItem("cerrauto_categorias_custom", JSON.stringify(saved));
+      }
+    } catch {}
+  }
+
   return {
     nombre: fd.get("nombre")?.trim() || "",
-    categoria: catSelect === "__nueva__" ? catNueva : catSelect,
+    categoria: categoriaFinal,
     compatibilidad: fd.get("compatibilidad")?.trim() || "",
     usaPila: fd.get("usaPila") !== "no",
     fotoUrl: fd.get("fotoUrl") || "",

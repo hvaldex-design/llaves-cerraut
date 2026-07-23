@@ -17,7 +17,7 @@ import {
 import {
   renderInventarioView, renderProductoForm, renderProductoDetail,
   readProductoForm, saveProducto, deleteProducto, adjustStock,
-  subirFotoProducto, CATEGORIAS_CONTROL, CATEGORIAS_TRANSPONDER
+  subirFotoProducto, CATEGORIAS_CONTROL, getCategoriaTransponder
 } from "./inventario.js";
 
 const state = {

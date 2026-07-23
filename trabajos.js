@@ -4,7 +4,7 @@
 import { addItem, updateItem, deleteItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
 import { formatCLP, formatDate, escapeHtml, showToast, todayInputValue } from "./helpers.js";
-import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN, CATEGORIAS_TRANSPONDER } from "./inventario.js";
+import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN, getCategoriaTransponder } from "./inventario.js";
 import { ESPADINES_CATALOGO } from "./espadines.js";
 
 export const TIPOS_SERVICIO = ["Duplicado", "Pérdida de llaves", "Llave simple", "Apertura"];
@@ -91,7 +91,8 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
   const t = trabajo || {};
   const controles = inventario.filter(p => CATEGORIAS_CONTROL.includes(p.categoria));
   const espadinesInv = inventario.filter(p => CATEGORIAS_ESPADIN.includes(p.categoria));
-  const transpondersInv = inventario.filter(p => CATEGORIAS_TRANSPONDER.includes(p.categoria));
+  const catTransponder = getCategoriaTransponder();
+  const transpondersInv = inventario.filter(p => catTransponder.some(c => c.toLowerCase() === (p.categoria||"").toLowerCase()));
 
   // Cards de controles con foto para el selector visual
   const controlesCardsHtml = controles.map(c => `
