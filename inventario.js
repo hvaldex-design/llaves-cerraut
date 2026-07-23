@@ -14,12 +14,10 @@ export const CATEGORIAS = [
   "Llave virgen",
   "Pila / Batería",
   "Otro"
-  "Chip"
-  "Llave AUTEL"
 ];
 
 // Categorías que son controles remotos (para lógica de pila y selector)
-export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico", "Control remoto", "Llave AUTEL"];
+export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico", "Control remoto"];
 export const CATEGORIAS_ESPADIN = ["Espadín"];
 export const CATEGORIAS_TRANSPONDER_BASE = ["Llave virgen", "CHIP", "Chip", "chip"];
 
