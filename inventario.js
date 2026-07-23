@@ -19,7 +19,7 @@ export const CATEGORIAS = [
 // Categorías que son controles remotos (para lógica de pila y selector)
 export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico", "Control remoto"];
 export const CATEGORIAS_ESPADIN = ["Espadín"];
-export const CATEGORIAS_TRANSPONDER_BASE = ["Llave virgen", "CHIP", "Chip", "chip"];
+export const CATEGORIAS_TRANSPONDER_BASE = ["CHIP", "Chip", "chip"];
 
 // Devuelve todas las categorías que son transponder:
 // las base + las categorías personalizadas guardadas que el usuario marcó como chip
