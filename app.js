@@ -293,16 +293,41 @@ function renderSheet() {
 
     let ctrlCosto = 0, ctrlPila = false;
 
+    const campoLlaveVirgen = document.getElementById("campo-llave-virgen");
+    const inputLlaveVirgenId = document.getElementById("input-llave-virgen-id");
+
+    function syncLlaveVirgenUI() {
+      const esLlaveSimple = selectTipoServicio?.value === "Llave simple";
+      if (campoLlaveVirgen) campoLlaveVirgen.classList.toggle("hidden", !esLlaveSimple);
+      if (!esLlaveSimple && inputLlaveVirgenId) {
+        inputLlaveVirgenId.value = "";
+        content.querySelectorAll("[data-lv-id]").forEach(c => {
+          c.classList.remove("selected");
+          c.querySelector(".inv-selector-check")?.remove();
+        });
+      }
+    }
+    syncLlaveVirgenUI();
+    selectTipoServicio?.addEventListener("change", () => {
+      syncLlaveVirgenUI();
+      recalcularCosto();
+    });
+
     function recalcularCosto() {
       const espadinSel = !!(inputEspadinId?.value || selectEspadinFallback?.value);
-      const total = calcularCostoAutomatico({
-        tipoServicio: selectTipoServicio.value,
+      // Sumar costo de llave virgen si está seleccionada
+      const lvCard = inputLlaveVirgenId?.value
+        ? content.querySelector(`[data-lv-id="${inputLlaveVirgenId.value}"]`)
+        : null;
+      const lvCosto = lvCard ? Number(lvCard.dataset.lvCosto || 0) : 0;
+      const base = calcularCostoAutomatico({
+        tipoServicio: selectTipoServicio?.value,
         controlCosto: ctrlCosto,
         controlUsaPila: ctrlPila,
         espadinSeleccionado: espadinSel,
         pincode: inputPincode?.value
       });
-      if (inputCostoTotal) inputCostoTotal.value = total;
+      if (inputCostoTotal) inputCostoTotal.value = base + lvCosto;
     }
 
     // Click en card de control
@@ -385,11 +410,36 @@ function renderSheet() {
       });
     });
 
-    selectEspadinFallback?.addEventListener("change", recalcularCosto);
-    [selectTipoServicio, inputPincode].forEach(el => {
-      el?.addEventListener("input",  recalcularCosto);
-      el?.addEventListener("change", recalcularCosto);
+    // Click en card de llave virgen
+    content.querySelectorAll("[data-lv-id]").forEach(card => {
+      card.addEventListener("click", () => {
+        const yaSeleccionado = inputLlaveVirgenId?.value === card.dataset.lvId;
+        content.querySelectorAll("[data-lv-id]").forEach(c => {
+          c.classList.remove("selected");
+          c.querySelector(".inv-selector-check")?.remove();
+        });
+        if (yaSeleccionado) {
+          if (inputLlaveVirgenId) inputLlaveVirgenId.value = "";
+        } else {
+          card.classList.add("selected");
+          card.insertAdjacentHTML("beforeend", `<i class="ti ti-check inv-selector-check"></i>`);
+          if (inputLlaveVirgenId) inputLlaveVirgenId.value = card.dataset.lvId;
+        }
+        recalcularCosto();
+      });
     });
+
+    // Buscador de llaves vírgenes
+    document.getElementById("buscar-llave-virgen")?.addEventListener("input", e => {
+      const q = e.target.value.toLowerCase();
+      content.querySelectorAll("[data-lv-id]").forEach(c => {
+        c.classList.toggle("hidden", !!q && !c.dataset.lvSearch?.includes(q));
+      });
+    });
+
+    selectEspadinFallback?.addEventListener("change", recalcularCosto);
+    inputPincode?.addEventListener("input",  recalcularCosto);
+    inputPincode?.addEventListener("change", recalcularCosto);
     if (!trabajo) recalcularCosto();
 
     function renderMediaTiles() {

@@ -4,7 +4,7 @@
 import { addItem, updateItem, deleteItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
 import { formatCLP, formatDate, escapeHtml, showToast, todayInputValue } from "./helpers.js";
-import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN } from "./inventario.js";
+import { descontarStockPorId, CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN, CATEGORIAS_LLAVE_VIRGEN, limpiarCategoriasCustom } from "./inventario.js";
 import { ESPADINES_CATALOGO } from "./espadines.js";
 
 export const TIPOS_SERVICIO = ["Duplicado", "Pérdida de llaves", "Llave simple", "Apertura"];
@@ -89,8 +89,10 @@ export function calcularCostoAutomatico({ tipoServicio, controlCosto, controlUsa
 
 export function renderTrabajoForm(trabajo = null, inventario = []) {
   const t = trabajo || {};
+  limpiarCategoriasCustom();
   const controles = inventario.filter(p => CATEGORIAS_CONTROL.includes(p.categoria));
   const espadinesInv = inventario.filter(p => CATEGORIAS_ESPADIN.includes(p.categoria));
+  const llavesVirgenes = inventario.filter(p => CATEGORIAS_LLAVE_VIRGEN.includes(p.categoria));
   // Mostrar TODOS los productos con categoría "CHIP" (case-insensitive + trim)
   const transpondersInv = inventario.filter(p =>
     (p.categoria || "").trim().toUpperCase() === "CHIP"
@@ -98,7 +100,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
 
   // Cards de controles con foto para el selector visual
   const controlesCardsHtml = controles.map(c => `
-    <div class="inv-selector-card ${t.controlId === c.id ? "selected" : ""}"
+    <div class="inv-selector-card-compact ${t.controlId === c.id ? "selected" : ""}"
          data-ctrl-id="${c.id}"
          data-ctrl-costo="${c.costoUnitario || 0}"
          data-ctrl-pila="${c.usaPila === false ? "0" : "1"}"
@@ -119,7 +121,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
 
   // Cards de transponders/chips con foto
   const transpondersCardsHtml = transpondersInv.map(tr => `
-    <div class="inv-selector-card ${t.transponderInvId === tr.id ? "selected" : ""}"
+    <div class="inv-selector-card-compact ${t.transponderInvId === tr.id ? "selected" : ""}"
          data-tr-id="${tr.id}"
          data-tr-search="${escapeHtml((tr.nombre + " " + (tr.compatibilidad||"")).toLowerCase())}">
       <div class="inv-selector-img">
@@ -136,9 +138,29 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
     </div>
   `).join("");
 
+  // Cards de llaves vírgenes (aparecen cuando servicio = Llave simple)
+  const llavesVirgenesCardsHtml = llavesVirgenes.map(lv => `
+    <div class="inv-selector-card-compact ${t.llaveVirgenId === lv.id ? "selected" : ""}"
+         data-lv-id="${lv.id}"
+         data-lv-costo="${lv.costoUnitario || 0}"
+         data-lv-search="${escapeHtml((lv.nombre + " " + (lv.compatibilidad||"")).toLowerCase())}">
+      <div class="inv-selector-img-sm">
+        ${lv.fotoUrl
+          ? `<img src="${escapeHtml(lv.fotoUrl)}" alt="">`
+          : `<i class="ti ti-key"></i>`}
+      </div>
+      <div class="inv-selector-info">
+        <div class="inv-selector-name">${escapeHtml(lv.nombre)}</div>
+        <div class="inv-selector-compat">${escapeHtml(lv.compatibilidad || "")}</div>
+        <div class="inv-selector-price">${formatCLP(lv.costoUnitario)}</div>
+      </div>
+      ${t.llaveVirgenId === lv.id ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
+    </div>
+  `).join("");
+
   // Cards de espadines con foto
   const espadinesCardsHtml = espadinesInv.map(e => `
-    <div class="inv-selector-card ${(t.espadinCodigo === e.id || t.espadinId === e.id) ? "selected" : ""}"
+    <div class="inv-selector-card-compact ${(t.espadinCodigo === e.id || t.espadinId === e.id) ? "selected" : ""}"
          data-esp-id="${e.id}"
          data-esp-search="${escapeHtml((e.nombre + " " + (e.compatibilidad||"")).toLowerCase())}">
       <div class="inv-selector-img">
@@ -217,7 +239,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
             <i class="ti ti-search"></i>
             <input type="search" id="buscar-transponder" placeholder="Buscar chip/transponder..." autocomplete="off">
           </div>
-          <div class="inv-selector-grid inv-selector-grid-chips" id="grid-transponders">
+          <div class="inv-selector-grid-compact" id="grid-transponders">
             ${transpondersCardsHtml}
           </div>
         ` : `<p style="color:var(--text-muted);font-size:13px;">No hay chips/transponders en el stock. Agrégalos desde Stock con categoría "Llave virgen".</p>`}
@@ -242,10 +264,24 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
             <i class="ti ti-search"></i>
             <input type="search" id="buscar-control" placeholder="Buscar control..." autocomplete="off">
           </div>
-          <div class="inv-selector-grid" id="grid-controles">
+          <div class="inv-selector-grid-compact" id="grid-controles">
             ${controlesCardsHtml || '<p style="color:var(--text-muted);font-size:13px;padding:10px 0;">Sin resultados.</p>'}
           </div>
         ` : `<p style="color:var(--text-muted);font-size:13px;">No hay controles en el inventario. Agrégalos desde Stock.</p>`}
+      </div>
+
+      <div class="field hidden" id="campo-llave-virgen">
+        <label>Llave virgen <span style="color:var(--text-muted)">(Llave simple — agrega costo automático)</span></label>
+        <input type="hidden" name="llaveVirgenId" id="input-llave-virgen-id" value="${escapeHtml(t.llaveVirgenId || "")}">
+        ${llavesVirgenes.length ? `
+          <div class="inv-selector-search-box">
+            <i class="ti ti-search"></i>
+            <input type="search" id="buscar-llave-virgen" placeholder="Buscar llave virgen..." autocomplete="off">
+          </div>
+          <div class="inv-selector-grid-compact" id="grid-llaves-virgenes">
+            ${llavesVirgenesCardsHtml}
+          </div>
+        ` : `<p style="color:var(--text-muted);font-size:13px;">Agrega llaves vírgenes al stock para seleccionarlas aquí.</p>`}
       </div>
 
       <div class="field">
@@ -256,7 +292,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
             <i class="ti ti-search"></i>
             <input type="search" id="buscar-espadin" placeholder="Buscar espadín..." autocomplete="off">
           </div>
-          <div class="inv-selector-grid" id="grid-espadines">
+          <div class="inv-selector-grid-compact" id="grid-espadines">
             ${espadinesCardsHtml}
           </div>
         ` : `
@@ -385,6 +421,7 @@ export function readTrabajoForm(form) {
     espadinCodigo: fd.get("espadinCodigo") || "",
     espadinId: "",
     pincode: Number(fd.get("pincode")) || 0,
+    llaveVirgenId: fd.get("llaveVirgenId") || "",
     costoTotal: Number(fd.get("costoTotal")) || 0,
     precioCobrado: Number(fd.get("precioCobrado")) || 0,
     fecha: fd.get("fecha") || todayInputValue(),
@@ -398,6 +435,7 @@ export async function saveTrabajo(uidUser, data, inventario, existingId = null, 
     if (data.controlId) await descontarStockPorId(uidUser, inventario, data.controlId);
     if (data.espadinId) await descontarStockPorId(uidUser, inventario, data.espadinId);
     if (data.transponderInvId) await descontarStockPorId(uidUser, inventario, data.transponderInvId);
+    if (data.llaveVirgenId) await descontarStockPorId(uidUser, inventario, data.llaveVirgenId);
     // Descuenta también la pila si corresponde
     const control = inventario.find((p) => p.id === data.controlId);
     if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) {

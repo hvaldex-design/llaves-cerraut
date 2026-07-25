@@ -21,22 +21,74 @@ export const CATEGORIAS = [
 // Categorías que son controles remotos (para lógica de pila y selector)
 export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico", "Control Autel", "Control remoto"];
 export const CATEGORIAS_ESPADIN = ["Espadín"];
+export const CATEGORIAS_LLAVE_VIRGEN = ["Llave virgen"];
 export const CATEGORIAS_TRANSPONDER_BASE = ["CHIP", "Chip", "chip"];
 
 // Devuelve todas las categorías que son transponder:
 // las base + las categorías personalizadas guardadas que el usuario marcó como chip
 export function getCategoriaTransponder() {
-  // Solo muestra productos con categoría "CHIP" (en cualquier capitalización)
-  // más cualquier categoría custom que el usuario haya guardado como chip
+  return ["CHIP"];
+}
+
+// Limpia categorías inválidas del localStorage que ya no se usan
+export function limpiarCategoriasCustom() {
   try {
+    const invalidas = ["Transponder", "transponder", "Chip", "chip"];
     const saved = JSON.parse(localStorage.getItem("cerrauto_categorias_custom") || "[]");
-    return [...new Set(["CHIP", "Chip", "chip", ...saved])];
-  } catch {
-    return ["CHIP", "Chip", "chip"];
-  }
+    const limpias = saved.filter(c => !invalidas.includes(c));
+    localStorage.setItem("cerrauto_categorias_custom", JSON.stringify(limpias));
+  } catch {}
 }
 
 export const CATEGORIAS_TRANSPONDER = CATEGORIAS_TRANSPONDER_BASE;
+
+// Agrupa controles por prefijo (XK, XS, XN etc. para Xhorse; B, NB, ZB para KD)
+function getSubgrupo(nombre, categoria) {
+  if (!nombre) return "Otros";
+  const n = nombre.toUpperCase().trim();
+  if (categoria === "Control Xhorse") {
+    if (n.startsWith("XKGD")) return "XKGD";
+    if (n.startsWith("XKK"))  return "XKK";
+    if (n.startsWith("XK"))   return "XK";
+    if (n.startsWith("XS"))   return "XS";
+    if (n.startsWith("XN"))   return "XN";
+    if (n.startsWith("XE"))   return "XE";
+    if (n.startsWith("XA"))   return "XA";
+    if (n.startsWith("XP"))   return "XP";
+    if (n.startsWith("XR"))   return "XR";
+    return "Otros";
+  }
+  if (categoria === "Control KD") {
+    const n2 = nombre.toUpperCase().trim();
+    if (n2.startsWith("NB")) return "Serie NB";
+    if (n2.startsWith("ZB")) return "Serie ZB";
+    if (n2.startsWith("B"))  return "Serie B";
+    return "Otros";
+  }
+  return null;
+}
+
+function renderItemCard(p) {
+  const isBajo = Number(p.stock) <= Number(p.stockMinimo);
+  const icono = CATEGORIAS_CONTROL.includes(p.categoria) ? "device-remote"
+    : p.categoria === "Espadín" ? "key"
+    : (p.categoria || "").toUpperCase() === "CHIP" ? "key-filled"
+    : "box";
+  return `
+    <div class="inv-card-compact" data-open-producto="${p.id}">
+      <div class="inv-card-compact-img">
+        ${p.fotoUrl
+          ? `<img src="${escapeHtml(p.fotoUrl)}" alt="">`
+          : `<i class="ti ti-${icono}"></i>`}
+        <span class="inv-stock-badge ${isBajo ? "danger" : "ok"}">${p.stock}</span>
+      </div>
+      <div class="inv-card-compact-body">
+        <p class="inv-card-name">${escapeHtml(p.nombre)}</p>
+        ${p.compatibilidad ? `<p class="inv-card-compat">${escapeHtml(p.compatibilidad.slice(0,28))}${p.compatibilidad.length > 28 ? "…" : ""}</p>` : ""}
+      </div>
+    </div>
+  `;
+}
 
 export function renderInventarioView(state) {
   const { inventario } = state;
@@ -52,16 +104,15 @@ export function renderInventarioView(state) {
     `;
   }
 
-  // Agrupar por categoría
+  const bajosStock = inventario.filter(p => Number(p.stock) <= Number(p.stockMinimo));
+  const todasCats = [...new Set([...CATEGORIAS, ...inventario.map(p => p.categoria || "Otro")])];
   const grupos = {};
-  for (const cat of CATEGORIAS) grupos[cat] = [];
+  for (const cat of todasCats) grupos[cat] = [];
   for (const p of inventario) {
     const cat = p.categoria || "Otro";
     if (!grupos[cat]) grupos[cat] = [];
     grupos[cat].push(p);
   }
-
-  const bajosStock = inventario.filter(p => Number(p.stock) <= Number(p.stockMinimo));
 
   let html = `
     <div class="view-title">Stock</div>
@@ -82,26 +133,27 @@ export function renderInventarioView(state) {
 
   for (const [cat, items] of Object.entries(grupos)) {
     if (!items.length) continue;
+    const usaSubgrupos = ["Control Xhorse", "Control KD"].includes(cat);
     html += `<div class="inv-group-title">${escapeHtml(cat)} <span class="inv-group-count">${items.length}</span></div>`;
-    html += `<div class="inv-grid">`;
-    for (const p of items) {
-      const isBajo = Number(p.stock) <= Number(p.stockMinimo);
-      html += `
-        <div class="inv-card" data-open-producto="${p.id}">
-          <div class="inv-card-img">
-            ${p.fotoUrl
-              ? `<img src="${escapeHtml(p.fotoUrl)}" alt="${escapeHtml(p.nombre)}">`
-              : `<div class="inv-card-noimg"><i class="ti ti-${CATEGORIAS_CONTROL.includes(p.categoria) ? 'device-remote' : p.categoria === 'Espadín' ? 'key' : 'box'}"></i></div>`}
-            <span class="inv-stock-badge ${isBajo ? 'danger' : 'ok'}">${p.stock}</span>
-          </div>
-          <div class="inv-card-body">
-            <p class="inv-card-name">${escapeHtml(p.nombre)}</p>
-            ${p.compatibilidad ? `<p class="inv-card-compat">${escapeHtml(p.compatibilidad.slice(0,30))}${p.compatibilidad.length > 30 ? "…" : ""}</p>` : ""}
-          </div>
-        </div>
-      `;
+    if (usaSubgrupos) {
+      const subgrupos = {};
+      for (const p of items) {
+        const sg = getSubgrupo(p.nombre, cat) || "Otros";
+        if (!subgrupos[sg]) subgrupos[sg] = [];
+        subgrupos[sg].push(p);
+      }
+      for (const [sg, sgItems] of Object.entries(subgrupos)) {
+        if (!sgItems.length) continue;
+        html += `<div class="inv-subgroup-title">${escapeHtml(sg)} <span class="inv-group-count">${sgItems.length}</span></div>`;
+        html += `<div class="inv-grid-compact">`;
+        for (const p of sgItems) html += renderItemCard(p);
+        html += `</div>`;
+      }
+    } else {
+      html += `<div class="inv-grid-compact">`;
+      for (const p of items) html += renderItemCard(p);
+      html += `</div>`;
     }
-    html += `</div>`;
   }
 
   return html;
