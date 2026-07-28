@@ -75,16 +75,16 @@ function renderItemCard(p) {
     : (p.categoria || "").toUpperCase() === "CHIP" ? "key-filled"
     : "box";
   return `
-    <div class="inv-card-compact" data-open-producto="${p.id}">
-      <div class="inv-card-compact-img">
+    <div class="inv-card" data-open-producto="${p.id}">
+      <div class="inv-card-img">
         ${p.fotoUrl
-          ? `<img src="${escapeHtml(p.fotoUrl)}" alt="">`
-          : `<i class="ti ti-${icono}"></i>`}
+          ? '<img src="' + escapeHtml(p.fotoUrl) + '" alt="' + escapeHtml(p.nombre) + '">'
+          : '<div class="inv-card-noimg"><i class="ti ti-' + icono + '"></i></div>'}
         <span class="inv-stock-badge ${isBajo ? "danger" : "ok"}">${p.stock}</span>
       </div>
-      <div class="inv-card-compact-body">
+      <div class="inv-card-body">
         <p class="inv-card-name">${escapeHtml(p.nombre)}</p>
-        ${p.compatibilidad ? `<p class="inv-card-compat">${escapeHtml(p.compatibilidad.slice(0,28))}${p.compatibilidad.length > 28 ? "…" : ""}</p>` : ""}
+        ${p.compatibilidad ? '<p class="inv-card-compat">' + escapeHtml(p.compatibilidad.slice(0,30)) + (p.compatibilidad.length > 30 ? "…" : "") + '</p>' : ""}
       </div>
     </div>
   `;
@@ -145,12 +145,12 @@ export function renderInventarioView(state) {
       for (const [sg, sgItems] of Object.entries(subgrupos)) {
         if (!sgItems.length) continue;
         html += `<div class="inv-subgroup-title">${escapeHtml(sg)} <span class="inv-group-count">${sgItems.length}</span></div>`;
-        html += `<div class="inv-grid-compact">`;
+        html += `<div class="inv-grid">`;
         for (const p of sgItems) html += renderItemCard(p);
         html += `</div>`;
       }
     } else {
-      html += `<div class="inv-grid-compact">`;
+      html += `<div class="inv-grid">`;
       for (const p of items) html += renderItemCard(p);
       html += `</div>`;
     }
