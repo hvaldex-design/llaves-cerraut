@@ -47,15 +47,15 @@ function getSubgrupo(nombre, categoria) {
   if (!nombre) return "Otros";
   const n = nombre.toUpperCase().trim();
   if (categoria === "Control Xhorse") {
-    if (n.startsWith("XKGD")) return "XKGD";
-    if (n.startsWith("XKK"))  return "XKK";
-    if (n.startsWith("XK"))   return "XK";
-    if (n.startsWith("XS"))   return "XS";
-    if (n.startsWith("XN"))   return "XN";
-    if (n.startsWith("XE"))   return "XE";
-    if (n.startsWith("XA"))   return "XA";
-    if (n.startsWith("XP"))   return "XP";
-    if (n.startsWith("XR"))   return "XR";
+    // Todos los que empiezan con XK van juntos (XK, XKK, XKGD, XKKF...)
+    if (n.startsWith("XK")) return "XK";
+    if (n.startsWith("XS")) return "XS";
+    if (n.startsWith("XN")) return "XN";
+    if (n.startsWith("XE")) return "XE";
+    if (n.startsWith("XA")) return "XA";
+    if (n.startsWith("XP")) return "XP";
+    if (n.startsWith("XR")) return "XR";
+    if (n.startsWith("XZ")) return "XZ";
     return "Otros";
   }
   if (categoria === "Control KD") {

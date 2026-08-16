@@ -13,7 +13,13 @@ export const TIPOS_SERVICIO = ["Duplicado", "Pérdida de llaves", "Llave simple"
 export const SERVICIOS_SIN_PILA = ["Llave simple", "Apertura"];
 
 export function renderTrabajosView(state) {
-  const { trabajos } = state;
+  // Ordenar por fecha descendente (más recientes primero); los sin fecha al final
+  const trabajos = [...state.trabajos].sort((a, b) => {
+    if (!a.fecha && !b.fecha) return 0;
+    if (!a.fecha) return 1;
+    if (!b.fecha) return -1;
+    return b.fecha.localeCompare(a.fecha);
+  });
 
   if (!trabajos.length) {
     return `
@@ -206,13 +212,15 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
         <input name="telefono" placeholder="+56 9 1234 5678" value="${escapeHtml(t.telefono || "")}">
       </div>
       <div class="field-row">
-        <div class="field">
+        <div class="field autocomplete-wrap">
           <label>Marca</label>
-          <input name="vehiculoMarca" placeholder="Toyota" value="${escapeHtml(t.vehiculoMarca || "")}" required>
+          <input name="vehiculoMarca" id="input-marca" placeholder="Toyota" value="${escapeHtml(t.vehiculoMarca || "")}" required autocomplete="off">
+          <div class="autocomplete-lista" id="sugerencias-marca"></div>
         </div>
-        <div class="field">
+        <div class="field autocomplete-wrap">
           <label>Modelo</label>
-          <input name="vehiculoModelo" placeholder="Hilux" value="${escapeHtml(t.vehiculoModelo || "")}" required>
+          <input name="vehiculoModelo" id="input-modelo" placeholder="Hilux" value="${escapeHtml(t.vehiculoModelo || "")}" required autocomplete="off">
+          <div class="autocomplete-lista" id="sugerencias-modelo"></div>
         </div>
       </div>
       <div class="field">
@@ -238,12 +246,16 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
         ${transpondersInv.length ? `
           <div class="inv-selector-search-box">
             <i class="ti ti-search"></i>
-            <input type="search" id="buscar-transponder" placeholder="Buscar chip/transponder..." autocomplete="off">
+            <input type="search" id="buscar-transponder" placeholder="Buscar chip por código o marca..." autocomplete="off">
           </div>
-          <div class="inv-selector-grid-compact" id="grid-transponders">
+          <button type="button" class="selector-toggle" id="toggle-transponders">
+            <span id="label-transponder-sel">${t.transponderInvId ? (transpondersInv.find(x=>x.id===t.transponderInvId)?.nombre || "Seleccionar chip") : "Seleccionar chip"}</span>
+            <i class="ti ti-chevron-down"></i>
+          </button>
+          <div class="inv-selector-grid-compact selector-colapsable ${t.transponderInvId ? "" : "cerrado"}" id="grid-transponders">
             ${transpondersCardsHtml}
           </div>
-        ` : `<p style="color:var(--text-muted);font-size:13px;">No hay chips/transponders en el stock. Agrégalos desde Stock con categoría "Llave virgen".</p>`}
+        ` : `<p style="color:var(--text-muted);font-size:13px;">No hay chips en el stock. Agrégalos desde Stock con categoría "CHIP".</p>`}
       </div>
 
       <div class="field-row">

@@ -5,6 +5,7 @@ import { auth, loginWithGoogle, logout, watchAuth, watchCollection, updateItem }
 import { uploadMedia } from "./cloudinary.js";
 import { showToast, formatDate } from "./helpers.js";
 import { renderDashboard, renderDashboardDetail } from "./dashboard.js";
+import { sugerirMarcas, sugerirModelos } from "./vehiculos.js";
 import { getNombreTaller, getLogoTaller, setNombreTaller, setLogoTaller, renderConfigTaller } from "./taller.js";
 import {
   renderTrabajosView, renderTrabajoForm, renderTrabajoDetail,
@@ -183,6 +184,15 @@ function renderCurrentView() {
     document.getElementById("btn-dash-nuevo-trabajo")?.addEventListener("click", () => {
       openSheet("trabajo-form");
     });
+    // Alertas de stock bajo → abren el producto directamente
+    container.querySelectorAll("[data-open-producto-alerta]").forEach(row => {
+      row.addEventListener("click", () => {
+        state.view = "inventario";
+        renderCurrentView();
+        setTimeout(() => openSheet("producto-detail", row.dataset.openProductoAlerta), 100);
+      });
+    });
+
     // Stat cards clickeables
     container.querySelectorAll("[data-dash-detail]").forEach(card => {
       card.addEventListener("click", () => openSheet("dash-detail", card.dataset.dashDetail));
@@ -312,6 +322,63 @@ function renderSheet() {
     content.innerHTML = renderTrabajoForm(trabajo, state.inventario);
     bindCloseButtons();
 
+    // ── Autocompletado de marca y modelo ──
+    const inputMarca  = document.getElementById("input-marca");
+    const inputModelo = document.getElementById("input-modelo");
+    const sugMarca    = document.getElementById("sugerencias-marca");
+    const sugModelo   = document.getElementById("sugerencias-modelo");
+
+    function mostrarSugerencias(contenedor, lista, alElegir) {
+      if (!contenedor) return;
+      if (!lista.length) {
+        contenedor.innerHTML = "";
+        contenedor.classList.remove("visible");
+        return;
+      }
+      contenedor.innerHTML = lista
+        .map(item => `<div class="autocomplete-item" data-valor="${item}">${item}</div>`)
+        .join("");
+      contenedor.classList.add("visible");
+      contenedor.querySelectorAll(".autocomplete-item").forEach(el => {
+        el.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          alElegir(el.dataset.valor);
+          contenedor.innerHTML = "";
+          contenedor.classList.remove("visible");
+        });
+      });
+    }
+
+    inputMarca?.addEventListener("input", () => {
+      mostrarSugerencias(sugMarca, sugerirMarcas(inputMarca.value), (valor) => {
+        inputMarca.value = valor;
+        inputModelo?.focus();
+      });
+    });
+
+    inputMarca?.addEventListener("blur", () => {
+      setTimeout(() => sugMarca?.classList.remove("visible"), 150);
+    });
+
+    inputModelo?.addEventListener("input", () => {
+      mostrarSugerencias(sugModelo, sugerirModelos(inputMarca?.value, inputModelo.value), (valor) => {
+        inputModelo.value = valor;
+      });
+    });
+
+    inputModelo?.addEventListener("focus", () => {
+      // Al enfocar, mostrar todos los modelos de la marca si ya está escrita
+      if (inputMarca?.value && !inputModelo.value) {
+        mostrarSugerencias(sugModelo, sugerirModelos(inputMarca.value, ""), (valor) => {
+          inputModelo.value = valor;
+        });
+      }
+    });
+
+    inputModelo?.addEventListener("blur", () => {
+      setTimeout(() => sugModelo?.classList.remove("visible"), 150);
+    });
+
     const inputControlId  = document.getElementById("input-control-id");
     const inputEspadinId  = document.getElementById("input-espadin-id");
     const selectEspadinFallback = document.getElementById("select-espadin-fallback");
@@ -429,6 +496,13 @@ function renderSheet() {
           card.classList.add("selected");
           card.insertAdjacentHTML("beforeend", `<i class="ti ti-check inv-selector-check"></i>`);
           if (inputTransponderId) inputTransponderId.value = card.dataset.trId;
+          const labelTr = document.getElementById("label-transponder-sel");
+          if (labelTr) labelTr.textContent = card.querySelector(".inv-selector-name")?.textContent || "Chip seleccionado";
+          document.getElementById("grid-transponders")?.classList.add("cerrado");
+        }
+        if (yaSeleccionado) {
+          const labelTr = document.getElementById("label-transponder-sel");
+          if (labelTr) labelTr.textContent = "Seleccionar chip";
         }
         recalcularCosto();
       });
@@ -442,6 +516,16 @@ function renderSheet() {
       gridControles?.classList.toggle("cerrado");
       const icono = toggleControles.querySelector("i");
       if (icono) icono.className = gridControles?.classList.contains("cerrado")
+        ? "ti ti-chevron-down" : "ti ti-chevron-up";
+    });
+
+    // Toggle del desplegable de chips
+    const gridTransponders = document.getElementById("grid-transponders");
+    const toggleTransponders = document.getElementById("toggle-transponders");
+    toggleTransponders?.addEventListener("click", () => {
+      gridTransponders?.classList.toggle("cerrado");
+      const icono = toggleTransponders.querySelector("i");
+      if (icono) icono.className = gridTransponders?.classList.contains("cerrado")
         ? "ti ti-chevron-down" : "ti ti-chevron-up";
     });
 
@@ -472,6 +556,7 @@ function renderSheet() {
     });
     document.getElementById("buscar-transponder")?.addEventListener("input", e => {
       const q = e.target.value.toLowerCase();
+      if (q) document.getElementById("grid-transponders")?.classList.remove("cerrado");
       content.querySelectorAll("[data-tr-id]").forEach(c => {
         c.classList.toggle("hidden", !!q && !c.dataset.trSearch?.includes(q));
       });

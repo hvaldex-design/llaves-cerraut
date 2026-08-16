@@ -35,9 +35,18 @@ export function renderDashboard(state) {
 
   const bajosHtml = bajosStock.length
     ? bajosStock.map(p => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;">${escapeHtml(p.nombre)}</span>
+        <div class="alerta-stock-row" data-open-producto-alerta="${p.id}">
+          <div class="alerta-stock-img">
+            ${p.fotoUrl
+              ? `<img src="${escapeHtml(p.fotoUrl)}" alt="">`
+              : `<i class="ti ti-box"></i>`}
+          </div>
+          <div class="alerta-stock-info">
+            <div class="alerta-stock-nombre">${escapeHtml(p.nombre)}</div>
+            <div class="alerta-stock-cat">${escapeHtml(p.categoria || "")}</div>
+          </div>
           <span class="badge danger">${p.stock} restantes</span>
+          <i class="ti ti-chevron-right alerta-stock-chevron"></i>
         </div>`).join("")
     : `<p style="font-size:13px;color:var(--text-muted);margin:0;">Todo el stock está al día ✓</p>`;
 
