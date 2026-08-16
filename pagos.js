@@ -104,6 +104,8 @@ export function renderPagosView(state) {
       </div>
     </div>
 
+    ${renderComparativoMensual(trabajos)}
+
     <div class="detail-section-title">Marcas con más trabajos</div>
     <div class="card">${topMarcasHtml || "<p style='color:var(--text-muted);font-size:13px;'>Sin datos aún.</p>"}</div>
 
@@ -203,4 +205,88 @@ export function renderPagoDetail(pago) {
 export async function deletePago(uidUser, id) {
   await deleteItem(uidUser, "pagos", id);
   showToast("Gasto eliminado", "success");
+}
+
+
+// ============================================================
+// Reporte mensual comparativo: este mes vs el anterior
+// ============================================================
+function renderComparativoMensual(trabajos) {
+  const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const hoy = new Date();
+  const mesAct = hoy.getMonth();
+  const anioAct = hoy.getFullYear();
+  const mesAnt = mesAct === 0 ? 11 : mesAct - 1;
+  const anioAnt = mesAct === 0 ? anioAct - 1 : anioAct;
+
+  const delMes = (m, a) => trabajos.filter(t => {
+    if (!t.fecha) return false;
+    const d = new Date(t.fecha);
+    return d.getMonth() === m && d.getFullYear() === a;
+  });
+
+  const act = delMes(mesAct, anioAct);
+  const ant = delMes(mesAnt, anioAnt);
+
+  const suma = (arr, campo) => arr.reduce((s, t) => s + (Number(t[campo]) || 0), 0);
+
+  const metricas = [
+    {
+      label: "Trabajos",
+      actual: act.length,
+      anterior: ant.length,
+      formato: (v) => v
+    },
+    {
+      label: "Ingresos",
+      actual: suma(act, "precioCobrado"),
+      anterior: suma(ant, "precioCobrado"),
+      formato: formatCLP
+    },
+    {
+      label: "Costos",
+      actual: suma(act, "costoTotal"),
+      anterior: suma(ant, "costoTotal"),
+      formato: formatCLP,
+      invertido: true  // subir costos es malo
+    },
+    {
+      label: "Ganancia",
+      actual: suma(act, "precioCobrado") - suma(act, "costoTotal"),
+      anterior: suma(ant, "precioCobrado") - suma(ant, "costoTotal"),
+      formato: formatCLP
+    }
+  ];
+
+  const filas = metricas.map(m => {
+    const diff = m.actual - m.anterior;
+    const pct = m.anterior !== 0 ? Math.round((diff / Math.abs(m.anterior)) * 100) : (m.actual > 0 ? 100 : 0);
+    const subio = diff > 0;
+    const igual = diff === 0;
+    // Si es una métrica invertida (costos), subir es malo
+    const esBueno = m.invertido ? !subio : subio;
+    const color = igual ? "var(--text-muted)" : (esBueno ? "var(--ok)" : "var(--danger)");
+    const flecha = igual ? "→" : (subio ? "↑" : "↓");
+
+    return `
+      <div class="comp-row">
+        <span class="comp-label">${m.label}</span>
+        <div class="comp-valores">
+          <span class="comp-anterior">${m.formato(m.anterior)}</span>
+          <i class="ti ti-arrow-narrow-right comp-flecha"></i>
+          <span class="comp-actual">${m.formato(m.actual)}</span>
+        </div>
+        <span class="comp-delta" style="color:${color}">
+          ${flecha} ${igual ? "—" : Math.abs(pct) + "%"}
+        </span>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="detail-section-title">${MESES[mesAnt]} vs ${MESES[mesAct]}</div>
+    <div class="card comp-card">
+      ${filas}
+    </div>
+  `;
 }

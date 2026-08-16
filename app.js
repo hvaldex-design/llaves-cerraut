@@ -17,7 +17,7 @@ import {
 import {
   renderInventarioView, renderProductoForm, renderProductoDetail,
   readProductoForm, saveProducto, deleteProducto, adjustStock,
-  subirFotoProducto, CATEGORIAS_CONTROL, getCategoriaTransponder, exportarDatosCSV
+  subirFotoProducto, CATEGORIAS_CONTROL, getCategoriaTransponder, exportarDatosCSV, renderHistorialProducto
 } from "./inventario.js";
 
 const state = {
@@ -26,6 +26,7 @@ const state = {
   trabajos: [],
   pagos: [],
   inventario: [],
+  movimientos: [],
   unsubscribers: [],
   sheet: null // { type, payload }
 };
@@ -51,7 +52,8 @@ function subscribeData() {
   state.unsubscribers = [
     watchCollection(state.user.uid, "trabajos", (items) => { state.trabajos = items; renderCurrentView(); }),
     watchCollection(state.user.uid, "pagos", (items) => { state.pagos = items; renderCurrentView(); }),
-    watchCollection(state.user.uid, "inventario", (items) => { state.inventario = items; renderCurrentView(); })
+    watchCollection(state.user.uid, "inventario", (items) => { state.inventario = items; renderCurrentView(); }),
+    watchCollection(state.user.uid, "movimientos", (items) => { state.movimientos = items; }, "fecha")
   ];
 }
 
@@ -318,6 +320,7 @@ function renderSheet() {
     const inputCostoTotal = document.getElementById("input-costo-total");
 
     let ctrlCosto = 0, ctrlPila = false;
+    const inputTransponderId = document.getElementById("input-transponder-id");
 
     const campoLlaveVirgen = document.getElementById("campo-llave-virgen");
     const inputLlaveVirgenId = document.getElementById("input-llave-virgen-id");
@@ -346,6 +349,13 @@ function renderSheet() {
         ? content.querySelector(`[data-lv-id="${inputLlaveVirgenId.value}"]`)
         : null;
       const lvCosto = lvCard ? Number(lvCard.dataset.lvCosto || 0) : 0;
+
+      // Sumar costo del chip/transponder si está seleccionado
+      const trCard = inputTransponderId?.value
+        ? content.querySelector(`[data-tr-id="${inputTransponderId.value}"]`)
+        : null;
+      const trCosto = trCard ? Number(trCard.dataset.trCosto || 0) : 0;
+
       const base = calcularCostoAutomatico({
         tipoServicio: selectTipoServicio?.value,
         controlCosto: ctrlCosto,
@@ -353,7 +363,7 @@ function renderSheet() {
         espadinSeleccionado: espadinSel,
         pincode: inputPincode?.value
       });
-      if (inputCostoTotal) inputCostoTotal.value = base + lvCosto;
+      if (inputCostoTotal) inputCostoTotal.value = base + lvCosto + trCosto;
     }
 
     // Click en card de control
@@ -373,6 +383,14 @@ function renderSheet() {
           if (inputControlId) inputControlId.value = card.dataset.ctrlId;
           ctrlCosto = Number(card.dataset.ctrlCosto || 0);
           ctrlPila = card.dataset.ctrlPila !== "0";
+          // Actualizar el label del desplegable y cerrarlo
+          const label = document.getElementById("label-control-sel");
+          if (label) label.textContent = card.querySelector(".inv-selector-name")?.textContent || "Control seleccionado";
+          document.getElementById("grid-controles")?.classList.add("cerrado");
+        }
+        if (yaSeleccionado) {
+          const label = document.getElementById("label-control-sel");
+          if (label) label.textContent = "Seleccionar control";
         }
         recalcularCosto();
       });
@@ -398,7 +416,6 @@ function renderSheet() {
     });
 
     // Click en card de transponder
-    const inputTransponderId = document.getElementById("input-transponder-id");
     content.querySelectorAll("[data-tr-id]").forEach(card => {
       card.addEventListener("click", () => {
         const yaSeleccionado = inputTransponderId?.value === card.dataset.trId;
@@ -413,14 +430,38 @@ function renderSheet() {
           card.insertAdjacentHTML("beforeend", `<i class="ti ti-check inv-selector-check"></i>`);
           if (inputTransponderId) inputTransponderId.value = card.dataset.trId;
         }
+        recalcularCosto();
       });
     });
 
     // Buscadores
+    // Toggle del desplegable de controles
+    const gridControles = document.getElementById("grid-controles");
+    const toggleControles = document.getElementById("toggle-controles");
+    toggleControles?.addEventListener("click", () => {
+      gridControles?.classList.toggle("cerrado");
+      const icono = toggleControles.querySelector("i");
+      if (icono) icono.className = gridControles?.classList.contains("cerrado")
+        ? "ti ti-chevron-down" : "ti ti-chevron-up";
+    });
+
     document.getElementById("buscar-control")?.addEventListener("input", e => {
       const q = e.target.value.toLowerCase();
+      // Al buscar, abrir el desplegable automáticamente
+      if (q) gridControles?.classList.remove("cerrado");
       content.querySelectorAll("[data-ctrl-id]").forEach(c => {
         c.classList.toggle("hidden", !!q && !c.dataset.ctrlSearch?.includes(q));
+      });
+    });
+
+    // Buscador del catálogo de espadines (cuando no hay espadines en stock)
+    document.getElementById("buscar-espadin-catalogo")?.addEventListener("input", e => {
+      const q = e.target.value.toLowerCase();
+      const sel = document.getElementById("select-espadin-fallback");
+      if (!sel) return;
+      Array.from(sel.options).forEach(op => {
+        if (!op.value) return; // no ocultar "Sin espadín"
+        op.hidden = !!q && !op.textContent.toLowerCase().includes(q);
       });
     });
     document.getElementById("buscar-espadin")?.addEventListener("input", e => {
@@ -719,6 +760,12 @@ function renderSheet() {
     if (!producto) return closeSheet();
     content.innerHTML = renderProductoDetail(producto);
     bindCloseButtons();
+
+    // Renderizar historial de movimientos del producto
+    const contHistorial = document.getElementById("historial-producto");
+    if (contHistorial) {
+      contHistorial.innerHTML = renderHistorialProducto(producto, state.movimientos || []);
+    }
 
     document.getElementById("btn-edit-producto").addEventListener("click", () => openSheet("producto-form", producto.id));
     document.getElementById("btn-delete-producto").addEventListener("click", async () => {

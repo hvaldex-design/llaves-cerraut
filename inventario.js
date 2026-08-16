@@ -344,6 +344,11 @@ export function renderProductoDetail(p) {
       <button class="btn" id="btn-stock-mas"><i class="ti ti-plus"></i> Sumar uno</button>
     </div>
 
+    <div class="detail-section-title">Historial de movimientos</div>
+    <div class="mov-lista" id="historial-producto">
+      <p style="color:var(--text-muted);font-size:13px;">Cargando...</p>
+    </div>
+
     <div class="detail-section-title">Acciones</div>
     <div class="flex-gap">
       <button class="btn" id="btn-edit-producto"><i class="ti ti-edit"></i> Editar</button>
@@ -398,16 +403,79 @@ export async function deleteProducto(uidUser, id) {
   showToast("Producto eliminado", "success");
 }
 
-export async function adjustStock(uidUser, producto, delta) {
+export async function adjustStock(uidUser, producto, delta, motivo = null) {
   const nuevoStock = Math.max(0, Number(producto.stock) + delta);
   await updateItem(uidUser, "inventario", producto.id, { stock: nuevoStock });
+  await registrarMovimiento(uidUser, {
+    productoId: producto.id,
+    productoNombre: producto.nombre,
+    tipo: delta > 0 ? "entrada" : "salida",
+    cantidad: Math.abs(delta),
+    stockAnterior: Number(producto.stock),
+    stockNuevo: nuevoStock,
+    motivo: motivo || (delta > 0 ? "Ajuste manual (+)" : "Ajuste manual (−)")
+  });
 }
 
-export async function descontarStockPorId(uidUser, inventario, productoId) {
+export async function descontarStockPorId(uidUser, inventario, productoId, motivo = "Usado en trabajo") {
   const producto = inventario.find(p => p.id === productoId);
   if (!producto) return;
   const nuevoStock = Math.max(0, Number(producto.stock) - 1);
   await updateItem(uidUser, "inventario", productoId, { stock: nuevoStock });
+  await registrarMovimiento(uidUser, {
+    productoId,
+    productoNombre: producto.nombre,
+    tipo: "salida",
+    cantidad: 1,
+    stockAnterior: Number(producto.stock),
+    stockNuevo: nuevoStock,
+    motivo
+  });
+}
+
+// Registra un movimiento de stock para trazabilidad
+export async function registrarMovimiento(uidUser, datos) {
+  try {
+    await addItem(uidUser, "movimientos", {
+      ...datos,
+      fecha: new Date().toISOString()
+    });
+  } catch (e) {
+    console.error("No se pudo registrar el movimiento:", e);
+  }
+}
+
+// Vista del historial de movimientos de un producto
+export function renderHistorialProducto(producto, movimientos) {
+  const movsProducto = movimientos
+    .filter(m => m.productoId === producto.id)
+    .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""))
+    .slice(0, 30);
+
+  if (!movsProducto.length) {
+    return `<p style="color:var(--text-muted);font-size:13px;padding:8px 0;">Sin movimientos registrados todavía.</p>`;
+  }
+
+  return movsProducto.map(m => {
+    const esSalida = m.tipo === "salida";
+    const fecha = m.fecha ? new Date(m.fecha).toLocaleDateString("es-CL", { day:"2-digit", month:"short", year:"2-digit" }) : "";
+    const hora = m.fecha ? new Date(m.fecha).toLocaleTimeString("es-CL", { hour:"2-digit", minute:"2-digit" }) : "";
+    return `
+      <div class="mov-row">
+        <div class="mov-icon ${esSalida ? "salida" : "entrada"}">
+          <i class="ti ti-${esSalida ? "arrow-down" : "arrow-up"}"></i>
+        </div>
+        <div class="mov-info">
+          <div class="mov-motivo">${escapeHtml(m.motivo || (esSalida ? "Salida" : "Entrada"))}</div>
+          <div class="mov-fecha">${fecha} · ${hora}</div>
+        </div>
+        <div class="mov-cambio">
+          <span class="mov-delta ${esSalida ? "neg" : "pos"}">${esSalida ? "−" : "+"}${m.cantidad || 1}</span>
+          <span class="mov-stock">${m.stockAnterior} → ${m.stockNuevo}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 export async function subirFotoProducto(file, onProgress) {

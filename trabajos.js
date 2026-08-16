@@ -123,8 +123,9 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
   const transpondersCardsHtml = transpondersInv.map(tr => `
     <div class="inv-selector-card-compact ${t.transponderInvId === tr.id ? "selected" : ""}"
          data-tr-id="${tr.id}"
+         data-tr-costo="${tr.costoUnitario || 0}"
          data-tr-search="${escapeHtml((tr.nombre + " " + (tr.compatibilidad||"")).toLowerCase())}">
-      <div class="inv-selector-img">
+      <div class="inv-selector-img-sm">
         ${tr.fotoUrl
           ? `<img src="${escapeHtml(tr.fotoUrl)}" alt="">`
           : `<i class="ti ti-key-filled"></i>`}
@@ -262,10 +263,14 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
         ${controles.length ? `
           <div class="inv-selector-search-box">
             <i class="ti ti-search"></i>
-            <input type="search" id="buscar-control" placeholder="Buscar control..." autocomplete="off">
+            <input type="search" id="buscar-control" placeholder="Buscar control por código o marca..." autocomplete="off">
           </div>
-          <div class="inv-selector-grid-compact" id="grid-controles">
-            ${controlesCardsHtml || '<p style="color:var(--text-muted);font-size:13px;padding:10px 0;">Sin resultados.</p>'}
+          <button type="button" class="selector-toggle" id="toggle-controles">
+            <span id="label-control-sel">${t.controlId ? (controles.find(x=>x.id===t.controlId)?.nombre || "Seleccionar control") : "Seleccionar control"}</span>
+            <i class="ti ti-chevron-down"></i>
+          </button>
+          <div class="inv-selector-grid-compact selector-colapsable ${t.controlId ? "" : "cerrado"}" id="grid-controles">
+            ${controlesCardsHtml}
           </div>
         ` : `<p style="color:var(--text-muted);font-size:13px;">No hay controles en el inventario. Agrégalos desde Stock.</p>`}
       </div>
@@ -296,7 +301,11 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
             ${espadinesCardsHtml}
           </div>
         ` : `
-          <select name="espadinCodigo" id="select-espadin-fallback">
+          <div class="inv-selector-search-box">
+            <i class="ti ti-search"></i>
+            <input type="search" id="buscar-espadin-catalogo" placeholder="Buscar espadín (TOY43, HU66...)" autocomplete="off">
+          </div>
+          <select name="espadinCodigo" id="select-espadin-fallback" size="6" class="select-lista">
             <option value="">Sin espadín</option>
             ${opcionesEspadin}
           </select>

@@ -1378,3 +1378,162 @@ label {
   opacity: 0.7;
   cursor: not-allowed;
 }
+
+/* ============================================================
+   SELECTOR DESPLEGABLE (controles)
+   ============================================================ */
+.selector-toggle {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  color: var(--text-primary);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+.selector-toggle:active { border-color: var(--copper); }
+.selector-toggle i { color: var(--text-muted); font-size: 16px; }
+
+.selector-colapsable {
+  transition: max-height .2s ease;
+}
+
+.selector-colapsable.cerrado {
+  display: none;
+}
+
+/* Select en modo lista (espadines del catálogo) */
+.select-lista {
+  height: auto;
+  padding: 6px;
+  font-size: 13px;
+}
+
+.select-lista option {
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+/* ============================================================
+   HISTORIAL DE MOVIMIENTOS DE STOCK
+   ============================================================ */
+.mov-lista {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.mov-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mov-row:last-child { border-bottom: none; }
+
+.mov-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.mov-icon.salida { background: var(--danger-bg); color: var(--danger); }
+.mov-icon.entrada { background: var(--ok-bg); color: var(--ok); }
+
+.mov-info { flex: 1; min-width: 0; }
+
+.mov-motivo {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mov-fecha {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.mov-cambio {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.mov-delta {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  display: block;
+}
+
+.mov-delta.neg { color: var(--danger); }
+.mov-delta.pos { color: var(--ok); }
+
+.mov-stock {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   COMPARATIVO MENSUAL
+   ============================================================ */
+.comp-card {
+  padding: 14px 16px;
+}
+
+.comp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.comp-row:last-child { border-bottom: none; }
+
+.comp-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  width: 62px;
+}
+
+.comp-valores {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.comp-anterior { color: var(--text-muted); }
+.comp-flecha { color: var(--border-strong); font-size: 14px; }
+.comp-actual { color: var(--text-primary); font-weight: 600; }
+
+.comp-delta {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  width: 54px;
+  text-align: right;
+}
