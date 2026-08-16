@@ -9,7 +9,7 @@ import { getNombreTaller, getLogoTaller, setNombreTaller, setLogoTaller, renderC
 import {
   renderTrabajosView, renderTrabajoForm, renderTrabajoDetail,
   readTrabajoForm, saveTrabajo, saveTrabajoYDevolverId, deleteTrabajo, addMediaToTrabajo,
-  removeMediaFromTrabajo, calcularCostoAutomatico
+  removeMediaFromTrabajo, calcularCostoAutomatico, devolverInsumosAlStock, generarMensajeWhatsApp
 } from "./trabajos.js";
 import {
   renderPagosView, renderPagoForm, renderPagoDetail, readPagoForm, savePago, deletePago
@@ -17,7 +17,7 @@ import {
 import {
   renderInventarioView, renderProductoForm, renderProductoDetail,
   readProductoForm, saveProducto, deleteProducto, adjustStock,
-  subirFotoProducto, CATEGORIAS_CONTROL, getCategoriaTransponder
+  subirFotoProducto, CATEGORIAS_CONTROL, getCategoriaTransponder, exportarDatosCSV
 } from "./inventario.js";
 
 const state = {
@@ -229,7 +229,27 @@ function renderCurrentView() {
   } else {
     container.innerHTML = renderInventarioView(state);
     container.querySelectorAll("[data-open-producto]").forEach((card) => {
-      card.addEventListener("click", () => openSheet("producto-detail", card.dataset.openProducto));
+      card.addEventListener("click", (e) => {
+        // No abrir el detalle si se tocó un botón rápido de stock
+        if (e.target.closest("[data-stock-menos],[data-stock-mas]")) return;
+        openSheet("producto-detail", card.dataset.openProducto);
+      });
+    });
+
+    // Botones rápidos de stock (+/-) sin abrir el detalle
+    container.querySelectorAll("[data-stock-menos]").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const prod = state.inventario.find(p => p.id === btn.dataset.stockMenos);
+        if (prod) await adjustStock(state.user.uid, prod, -1);
+      });
+    });
+    container.querySelectorAll("[data-stock-mas]").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const prod = state.inventario.find(p => p.id === btn.dataset.stockMas);
+        if (prod) await adjustStock(state.user.uid, prod, 1);
+      });
     });
   }
 }
@@ -278,7 +298,13 @@ function renderSheet() {
   const { type, id } = state.sheet;
 
   if (type === "trabajo-form") {
-    const trabajo = id ? state.trabajos.find((t) => t.id === id) : null;
+    let trabajo = null;
+    if (id === "__duplicado__") {
+      trabajo = state.trabajoDuplicado || null;
+      state.trabajoDuplicado = null;
+    } else if (id) {
+      trabajo = state.trabajos.find((t) => t.id === id) || null;
+    }
     // Mientras se crea/edita, mantenemos una copia local de media para poder agregar/quitar antes de guardar
     const mediaLocal = trabajo ? [...(trabajo.media || [])] : [];
     content.innerHTML = renderTrabajoForm(trabajo, state.inventario);
@@ -486,17 +512,26 @@ function renderSheet() {
 
     document.getElementById("form-trabajo").addEventListener("submit", async (e) => {
       e.preventDefault();
+      const btnSubmit = e.target.querySelector('button[type="submit"]');
+      const textoOriginal = btnSubmit?.innerHTML;
+      if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<span class="btn-spinner"></span> Guardando...';
+      }
       const data = readTrabajoForm(e.target);
       try {
         if (trabajo?.id) {
-          await saveTrabajo(state.user.uid, data, state.inventario, trabajo.id, mediaLocal);
+          await saveTrabajo(state.user.uid, data, state.inventario, trabajo.id, mediaLocal, trabajo);
         } else {
-          // Crear primero el trabajo (esto descuenta stock), luego guardar la media local
           await saveTrabajoConMedia(state.user.uid, data, state.inventario, mediaLocal);
         }
         closeSheet();
       } catch (err) {
         showToast("No se pudo guardar el trabajo.", "error");
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.innerHTML = textoOriginal;
+        }
       }
     });
   }
@@ -508,8 +543,31 @@ function renderSheet() {
     bindCloseButtons();
 
     document.getElementById("btn-edit-trabajo").addEventListener("click", () => openSheet("trabajo-form", trabajo.id));
+
+    // Duplicar trabajo: abre el formulario con los mismos datos pero sin id ni fotos
+    document.getElementById("btn-duplicar-trabajo")?.addEventListener("click", () => {
+      const copia = { ...trabajo };
+      delete copia.id;
+      copia.media = [];
+      copia.fecha = new Date().toISOString().slice(0, 10);
+      copia.cliente = "";
+      copia.telefono = "";
+      state.trabajoDuplicado = copia;
+      openSheet("trabajo-form", "__duplicado__");
+    });
+
+    // Compartir por WhatsApp
+    document.getElementById("btn-compartir-trabajo")?.addEventListener("click", () => {
+      const mensaje = generarMensajeWhatsApp(trabajo, getNombreTaller());
+      const tel = (trabajo.telefono || "").replace(/[^0-9]/g, "");
+      const url = tel
+        ? `https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`
+        : `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+      window.open(url, "_blank");
+    });
     document.getElementById("btn-delete-trabajo").addEventListener("click", async () => {
-      if (confirm("¿Eliminar este trabajo? Esta acción no se puede deshacer.")) {
+      if (confirm("¿Eliminar este trabajo? Los insumos usados volverán al stock.")) {
+        await devolverInsumosAlStock(state.user.uid, trabajo, state.inventario);
         await deleteTrabajo(state.user.uid, trabajo.id);
         closeSheet();
       }
@@ -730,6 +788,12 @@ function renderSheet() {
     });
 
     // Guardar nombre
+    // Exportar respaldo de datos
+    document.getElementById("btn-exportar-datos")?.addEventListener("click", () => {
+      exportarDatosCSV(state.trabajos, state.inventario);
+      showToast("Respaldo descargado", "success");
+    });
+
     document.getElementById("btn-guardar-taller").addEventListener("click", () => {
       const nombre = document.getElementById("input-nombre-taller").value.trim();
       setNombreTaller(nombre);
@@ -752,11 +816,11 @@ function bindCloseButtons() {
 function keyIconSvg(size) {
   return `
     <svg class="brand-mark" width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="11" cy="11" r="7.5" stroke="#D97B3F" stroke-width="2.4"/>
-      <circle cx="11" cy="11" r="2.4" fill="#D97B3F"/>
-      <path d="M16.2 16.2L27 27" stroke="#D97B3F" stroke-width="2.4" stroke-linecap="round"/>
-      <path d="M22 21L25 24" stroke="#D97B3F" stroke-width="2.4" stroke-linecap="round"/>
-      <path d="M19 24L22 27" stroke="#D97B3F" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="11" cy="11" r="7.5" stroke="#00A8E8" stroke-width="2.4"/>
+      <circle cx="11" cy="11" r="2.4" fill="#00A8E8"/>
+      <path d="M16.2 16.2L27 27" stroke="#00A8E8" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M22 21L25 24" stroke="#00A8E8" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M19 24L22 27" stroke="#00A8E8" stroke-width="2.4" stroke-linecap="round"/>
     </svg>
   `;
 }

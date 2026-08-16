@@ -9,31 +9,32 @@
 }
 
 :root {
-  /* Paleta */
-  --bg: #15171A;
-  --bg-elevated: #1D2024;
-  --bg-card: #22262B;
-  --bg-input: #1A1D21;
-  --border: #2E3338;
-  --border-strong: #3D434A;
+  /* Paleta — Circuito digital (modo oscuro) */
+  --bg: #0D0F12;
+  --bg-elevated: #111318;
+  --bg-card: #141820;
+  --bg-input: #10131A;
+  --border: #1E2430;
+  --border-strong: #2A3340;
 
-  --copper: #D97B3F;
-  --copper-dim: #8C5429;
-  --copper-bright: #F0935A;
+  /* Acento azul eléctrico (reemplaza al cobre) */
+  --copper: #00A8E8;
+  --copper-dim: #0069A8;
+  --copper-bright: #33C4F5;
 
-  --text-primary: #F2EFE9;
-  --text-secondary: #A8ACB1;
-  --text-muted: #6E7378;
+  --text-primary: #E4EEF5;
+  --text-secondary: #8A9AAA;
+  --text-muted: #5A6A7A;
 
-  --ok: #5A8C6E;
-  --ok-bg: #1E2A22;
-  --warn: #D9A645;
-  --warn-bg: #2A2418;
-  --danger: #C25C52;
-  --danger-bg: #2B1E1D;
+  --ok: #00C97B;
+  --ok-bg: #06231A;
+  --warn: #E5A93C;
+  --warn-bg: #241C0C;
+  --danger: #E2483C;
+  --danger-bg: #251110;
 
   --radius: 10px;
-  --radius-lg: 16px;
+  --radius-lg: 14px;
 
   --font-display: 'Archivo Narrow', 'Arial Narrow', sans-serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -760,18 +761,27 @@ label {
    MODO CLARO
    ============================================================ */
 [data-tema="light"] {
-  --bg: #F5F5F0;
+  --bg: #F0F4F8;
   --bg-elevated: #FFFFFF;
   --bg-card: #FFFFFF;
-  --bg-input: #F0EFE9;
-  --border: #E0DEDA;
-  --border-strong: #C8C6C0;
-  --text-primary: #1A1A18;
-  --text-secondary: #5A5A55;
-  --text-muted: #9A9A95;
-  --ok-bg: #E8F5EE;
-  --warn-bg: #FFF8E8;
-  --danger-bg: #FDE8E7;
+  --bg-input: #F5F8FB;
+  --border: #E2E8F0;
+  --border-strong: #C8D4E0;
+
+  --copper: #0A6EFF;
+  --copper-dim: #4A94FF;
+  --copper-bright: #0055CC;
+
+  --text-primary: #1A2535;
+  --text-secondary: #5A7A9A;
+  --text-muted: #9AAABB;
+
+  --ok: #0A8A4A;
+  --ok-bg: #E8FFF4;
+  --warn: #B8860B;
+  --warn-bg: #FFF9E8;
+  --danger: #CC3333;
+  --danger-bg: #FFF0F0;
 }
 
 [data-tema="light"] body {
@@ -1246,4 +1256,125 @@ label {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+
+/* ============================================================
+   DISEÑO CIRCUITO — detalles
+   ============================================================ */
+
+/* Barra de acento superior en las tarjetas de estadísticas */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--copper), transparent);
+}
+
+.stat-card:nth-child(3)::before {
+  background: linear-gradient(90deg, var(--danger), transparent);
+}
+
+/* Números en monoespaciada — sensación de instrumento técnico */
+.stat-value, .card-amount, .kv-value.mono {
+  font-family: var(--font-mono);
+  letter-spacing: -0.5px;
+}
+
+/* Títulos de sección con línea de circuito */
+.detail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Glow sutil en cards al pasar */
+.card, .inv-card {
+  transition: border-color .15s;
+}
+
+.card:hover, .inv-card:hover {
+  border-color: var(--border-strong);
+}
+
+/* Tarjeta de trabajo con acento lateral */
+.trabajo-card {
+  border-left: 2px solid transparent;
+}
+
+.trabajo-card:hover {
+  border-left-color: var(--copper);
+}
+
+/* ============================================================
+   AJUSTE RÁPIDO DE STOCK EN LA CARD
+   ============================================================ */
+.inv-quick-stock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.inv-quick-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.inv-quick-btn:active {
+  background: var(--copper);
+  color: #fff;
+  border-color: var(--copper);
+}
+
+.inv-quick-val {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   SPINNER EN BOTONES
+   ============================================================ */
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+}
+
+.btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }

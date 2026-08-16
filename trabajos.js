@@ -397,9 +397,15 @@ export function renderTrabajoDetail(trabajo) {
     </div>
 
     <div class="detail-section-title">Acciones</div>
-    <div class="flex-gap">
+    <div class="flex-gap" style="margin-bottom:8px;">
       <button class="btn" id="btn-edit-trabajo"><i class="ti ti-edit"></i> Editar</button>
-      <button class="btn btn-danger" id="btn-delete-trabajo"><i class="ti ti-trash"></i> Eliminar</button>
+      <button class="btn" id="btn-duplicar-trabajo"><i class="ti ti-copy"></i> Duplicar</button>
+    </div>
+    <div class="flex-gap" style="margin-bottom:8px;">
+      <button class="btn" id="btn-compartir-trabajo"><i class="ti ti-brand-whatsapp"></i> Enviar por WhatsApp</button>
+    </div>
+    <div class="flex-gap">
+      <button class="btn btn-danger" id="btn-delete-trabajo"><i class="ti ti-trash"></i> Eliminar trabajo</button>
     </div>
   `;
 }
@@ -419,7 +425,6 @@ export function readTrabajoForm(form) {
     frecuencia: fd.get("frecuencia")?.trim() || "",
     controlId: fd.get("controlId") || "",
     espadinCodigo: fd.get("espadinCodigo") || "",
-    espadinId: "",
     pincode: Number(fd.get("pincode")) || 0,
     llaveVirgenId: fd.get("llaveVirgenId") || "",
     costoTotal: Number(fd.get("costoTotal")) || 0,
@@ -429,25 +434,60 @@ export function readTrabajoForm(form) {
   };
 }
 
-export async function saveTrabajo(uidUser, data, inventario, existingId = null, mediaExistente = []) {
-  // Si es un trabajo nuevo, descuenta stock del control y del espadín usados
-  if (!existingId) {
-    if (data.controlId) await descontarStockPorId(uidUser, inventario, data.controlId);
-    if (data.espadinId) await descontarStockPorId(uidUser, inventario, data.espadinId);
-    if (data.transponderInvId) await descontarStockPorId(uidUser, inventario, data.transponderInvId);
-    if (data.llaveVirgenId) await descontarStockPorId(uidUser, inventario, data.llaveVirgenId);
-    // Descuenta también la pila si corresponde
-    const control = inventario.find((p) => p.id === data.controlId);
-    if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) {
-      const pila = inventario.find((p) => p.categoria === "Batería / Pila" && /cr2032/i.test(p.nombre));
-      if (pila) await descontarStockPorId(uidUser, inventario, pila.id);
-    }
-  }
+// Descuenta del inventario TODOS los insumos usados en un trabajo.
+// Función única para evitar inconsistencias entre las distintas rutas de guardado.
+export async function descontarInsumosDelTrabajo(uidUser, data, inventario) {
+  if (data.controlId)        await descontarStockPorId(uidUser, inventario, data.controlId);
+  if (data.espadinCodigo)    await descontarStockPorId(uidUser, inventario, data.espadinCodigo);
+  if (data.transponderInvId) await descontarStockPorId(uidUser, inventario, data.transponderInvId);
+  if (data.llaveVirgenId)    await descontarStockPorId(uidUser, inventario, data.llaveVirgenId);
 
+  // Pila CR2032: se descuenta si el control la usa y el servicio no está exento
+  const control = inventario.find(p => p.id === data.controlId);
+  if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) {
+    const pila = inventario.find(p => {
+      const cat = (p.categoria || "").toLowerCase();
+      const esPila = cat.includes("pila") || cat.includes("batería") || cat.includes("bateria");
+      return esPila && /cr\s*2032/i.test(p.nombre || "");
+    });
+    if (pila) await descontarStockPorId(uidUser, inventario, pila.id);
+  }
+}
+
+// Devuelve al stock los insumos de un trabajo (usado al editar o eliminar)
+export async function devolverInsumosAlStock(uidUser, data, inventario) {
+  const sumar = async (id) => {
+    if (!id) return;
+    const prod = inventario.find(p => p.id === id);
+    if (prod) await updateItem(uidUser, "inventario", id, { stock: Number(prod.stock || 0) + 1 });
+  };
+  await sumar(data.controlId);
+  await sumar(data.espadinCodigo);
+  await sumar(data.transponderInvId);
+  await sumar(data.llaveVirgenId);
+
+  const control = inventario.find(p => p.id === data.controlId);
+  if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) {
+    const pila = inventario.find(p => {
+      const cat = (p.categoria || "").toLowerCase();
+      const esPila = cat.includes("pila") || cat.includes("batería") || cat.includes("bateria");
+      return esPila && /cr\s*2032/i.test(p.nombre || "");
+    });
+    if (pila) await sumar(pila.id);
+  }
+}
+
+export async function saveTrabajo(uidUser, data, inventario, existingId = null, mediaExistente = [], datosAnteriores = null) {
   if (existingId) {
+    // Al editar: devolver los insumos anteriores y descontar los nuevos
+    if (datosAnteriores) {
+      await devolverInsumosAlStock(uidUser, datosAnteriores, inventario);
+      await descontarInsumosDelTrabajo(uidUser, data, inventario);
+    }
     await updateItem(uidUser, "trabajos", existingId, { ...data, media: mediaExistente });
     showToast("Trabajo actualizado", "success");
   } else {
+    await descontarInsumosDelTrabajo(uidUser, data, inventario);
     await addItem(uidUser, "trabajos", { ...data, media: [] });
     showToast("Trabajo creado", "success");
   }
@@ -456,13 +496,7 @@ export async function saveTrabajo(uidUser, data, inventario, existingId = null, 
 // Crea un trabajo nuevo (descontando stock) y devuelve el id del documento creado.
 // Útil cuando ya hay fotos/videos subidos que se deben adjuntar justo después de crear.
 export async function saveTrabajoYDevolverId(uidUser, data, inventario) {
-  if (data.controlId) await descontarStockPorId(uidUser, inventario, data.controlId);
-  if (data.espadinId) await descontarStockPorId(uidUser, inventario, data.espadinId);
-  const control = inventario.find((p) => p.id === data.controlId);
-  if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) {
-    const pila = inventario.find((p) => p.categoria === "Batería / Pila" && /cr2032/i.test(p.nombre));
-    if (pila) await descontarStockPorId(uidUser, inventario, pila.id);
-  }
+  await descontarInsumosDelTrabajo(uidUser, data, inventario);
   const ref = await addItem(uidUser, "trabajos", { ...data, media: [] });
   showToast("Trabajo creado", "success");
   return ref.id;
@@ -489,4 +523,25 @@ export async function removeMediaFromTrabajo(uidUser, trabajo, index) {
     await updateItem(uidUser, "trabajos", trabajo.id, { media });
   }
   return media;
+}
+
+
+// Genera el texto del comprobante para enviar al cliente por WhatsApp
+export function generarMensajeWhatsApp(t, nombreTaller = "Llaves CerrAuto") {
+  const lineas = [
+    `*${nombreTaller}*`,
+    ``,
+    `Comprobante de servicio`,
+    `━━━━━━━━━━━━━━`,
+    t.cliente ? `Cliente: ${t.cliente}` : null,
+    `Vehículo: ${t.vehiculoMarca} ${t.vehiculoModelo}${t.vehiculoAnio ? " " + t.vehiculoAnio : ""}`,
+    `Servicio: ${t.tipoServicio || "—"}`,
+    t.sistema ? `Sistema: ${t.sistema}` : null,
+    t.fecha ? `Fecha: ${formatDate(t.fecha)}` : null,
+    `━━━━━━━━━━━━━━`,
+    `*Total: ${formatCLP(t.precioCobrado)}*`,
+    ``,
+    `¡Gracias por preferirnos!`
+  ].filter(Boolean);
+  return lineas.join("\n");
 }

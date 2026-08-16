@@ -85,9 +85,59 @@ function renderItemCard(p) {
       <div class="inv-card-body">
         <p class="inv-card-name">${escapeHtml(p.nombre)}</p>
         ${p.compatibilidad ? '<p class="inv-card-compat">' + escapeHtml(p.compatibilidad.slice(0,30)) + (p.compatibilidad.length > 30 ? "…" : "") + '</p>' : ""}
+        <div class="inv-quick-stock">
+          <button type="button" class="inv-quick-btn" data-stock-menos="${p.id}"><i class="ti ti-minus"></i></button>
+          <span class="inv-quick-val">${p.stock}</span>
+          <button type="button" class="inv-quick-btn" data-stock-mas="${p.id}"><i class="ti ti-plus"></i></button>
+        </div>
       </div>
     </div>
   `;
+}
+
+// Exporta todos los datos (trabajos + inventario) a un archivo CSV descargable
+export function exportarDatosCSV(trabajos, inventario) {
+  const esc = (v) => {
+    const s = String(v ?? "").replace(/"/g, '""');
+    return `"${s}"`;
+  };
+
+  // Hoja de trabajos
+  const headTrabajos = ["Fecha","Cliente","Teléfono","Marca","Modelo","Año","Servicio","Sistema","FCC ID","Frecuencia","Costo total","Precio cobrado","Ganancia","Notas"];
+  const filasTrabajos = trabajos.map(t => [
+    t.fecha || "", t.cliente || "", t.telefono || "",
+    t.vehiculoMarca || "", t.vehiculoModelo || "", t.vehiculoAnio || "",
+    t.tipoServicio || "", t.sistema || "", t.fccId || "", t.frecuencia || "",
+    t.costoTotal || 0, t.precioCobrado || 0,
+    (Number(t.precioCobrado)||0) - (Number(t.costoTotal)||0),
+    (t.notas || "").replace(/\n/g, " ")
+  ].map(esc).join(","));
+
+  // Hoja de inventario
+  const headInv = ["Producto","Categoría","Compatible con","Stock","Stock mínimo","Costo unitario","Precio venta","Proveedor"];
+  const filasInv = inventario.map(p => [
+    p.nombre || "", p.categoria || "", p.compatibilidad || "",
+    p.stock || 0, p.stockMinimo || 0, p.costoUnitario || 0, p.precioVenta || 0, p.proveedor || ""
+  ].map(esc).join(","));
+
+  const csv = [
+    "=== TRABAJOS ===",
+    headTrabajos.map(esc).join(","),
+    ...filasTrabajos,
+    "",
+    "=== INVENTARIO ===",
+    headInv.map(esc).join(","),
+    ...filasInv
+  ].join("\n");
+
+  // Descargar
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `respaldo-cerrauto-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function renderInventarioView(state) {

@@ -66,6 +66,16 @@ export function renderConfigTaller() {
       </div>
     </div>
 
+    <div class="field">
+      <label>Respaldo de datos</label>
+      <button type="button" class="btn" id="btn-exportar-datos">
+        <i class="ti ti-download"></i> Descargar respaldo (CSV)
+      </button>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+        Descarga todos tus trabajos e inventario en un archivo que puedes abrir en Excel.
+      </p>
+    </div>
+
     <button class="btn btn-primary" id="btn-guardar-taller">
       <i class="ti ti-check"></i> Guardar configuración
     </button>
