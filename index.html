@@ -4,7 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Llaves CerrAuto</title>
-  <meta name="theme-color" content="#15171A">
+  <meta name="description" content="Trabajos, finanzas e inventario de cerrajería automotriz, en un solo lugar.">
+  <meta name="theme-color" content="#0D0F12">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CerrAuto">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +26,60 @@
     <div class="loading-screen"><div class="spinner"></div></div>
   </div>
 
+  <noscript>
+    <div style="padding:32px;text-align:center;color:#E4EEF5;font-family:sans-serif;">
+      <h1 style="font-size:20px;">Necesitas activar JavaScript</h1>
+      <p style="color:#8A9AAA;">Llaves CerrAuto no puede funcionar sin JavaScript. Actívalo en tu navegador y recarga la página.</p>
+    </div>
+  </noscript>
+
   <script src="config.js"></script>
   <script type="module" src="app.js"></script>
+
+  <script>
+    // Si algo falla al cargar los módulos, la pantalla de carga se queda girando
+    // para siempre. Este respaldo la reemplaza por un mensaje que se entiende.
+    (function () {
+      var arrancó = false;
+      window.addEventListener("cerrauto:listo", function () { arrancó = true; });
+
+      function mostrarError(detalle) {
+        if (arrancó) return;
+        var app = document.getElementById("app");
+        if (!app || !app.querySelector(".loading-screen")) return;
+        app.innerHTML =
+          '<div class="error-arranque">' +
+            '<i class="ti ti-plug-connected-x"></i>' +
+            '<h1>No se pudo abrir la app</h1>' +
+            '<p>Revisa tu conexión y vuelve a intentar. Si el problema sigue, puede ser un dato mal puesto en <code>config.js</code>.</p>' +
+            (detalle ? '<pre class="error-detalle">' + String(detalle).slice(0, 300) + '</pre>' : '') +
+            '<button onclick="location.reload()">Reintentar</button>' +
+          '</div>';
+      }
+
+      window.addEventListener("error", function (e) {
+        if (e.target && (e.target.tagName === "SCRIPT" || e.target.tagName === "LINK")) {
+          mostrarError("No se pudo cargar " + (e.target.src || e.target.href));
+        } else if (e.message) {
+          mostrarError(e.message);
+        }
+      }, true);
+
+      window.addEventListener("unhandledrejection", function (e) {
+        mostrarError(e.reason && e.reason.message);
+      });
+
+      setTimeout(function () { mostrarError(""); }, 12000);
+    })();
+
+    // Service worker: la app se instala en el teléfono y abre sin señal.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function (e) {
+          console.warn("No se pudo registrar el service worker:", e);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

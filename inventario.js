@@ -2,8 +2,8 @@
 // inventario.js — Inventario agrupado por categoría con fotos
 // ============================================================
 import { addItem, updateItem, deleteItem } from "./firebase.js";
-import { uploadMedia } from "./cloudinary.js";
-import { formatCLP, escapeHtml, showToast } from "./helpers.js";
+import { uploadMedia, borrarMedia } from "./cloudinary.js";
+import { formatCLP, escapeHtml, showToast, parseFechaLocal, todayInputValue } from "./helpers.js";
 
 export const CATEGORIAS = [
   "Control Xhorse",
@@ -20,27 +20,26 @@ export const CATEGORIAS = [
 
 // Categorías que son controles remotos (para lógica de pila y selector)
 export const CATEGORIAS_CONTROL = ["Control Xhorse", "Control KD", "Control Genérico", "Control Autel", "Control remoto"];
-export const CATEGORIAS_ESPADIN = ["Espadín"];
-export const CATEGORIAS_LLAVE_VIRGEN = ["Llave virgen"];
-export const CATEGORIAS_TRANSPONDER_BASE = ["CHIP", "Chip", "chip"];
+export const CATEGORIAS_ESPADIN = ["Espadín", "Espadin", "Espadines"];
+export const CATEGORIAS_LLAVE_VIRGEN = ["Llave virgen", "Llaves vírgenes", "Llave vírgen"];
+export const CATEGORIA_CHIP = ["CHIP", "Chip", "Transponder"];
 
-// Devuelve todas las categorías que son transponder:
-// las base + las categorías personalizadas guardadas que el usuario marcó como chip
-export function getCategoriaTransponder() {
-  return ["CHIP"];
+// Compara categorías ignorando mayúsculas, espacios y tildes, para que
+// "Espadín", "espadin" y "ESPADINES" cuenten como lo mismo y un producto no
+// desaparezca de los selectores por un detalle de escritura.
+function normalizar(texto) {
+  return String(texto || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
 }
 
-// Limpia categorías inválidas del localStorage que ya no se usan
-export function limpiarCategoriasCustom() {
-  try {
-    const invalidas = ["Transponder", "transponder", "Chip", "chip"];
-    const saved = JSON.parse(localStorage.getItem("cerrauto_categorias_custom") || "[]");
-    const limpias = saved.filter(c => !invalidas.includes(c));
-    localStorage.setItem("cerrauto_categorias_custom", JSON.stringify(limpias));
-  } catch {}
+export function esCategoria(producto, lista) {
+  const cat = normalizar(producto?.categoria);
+  if (!cat) return false;
+  return lista.some(c => normalizar(c) === cat);
 }
-
-export const CATEGORIAS_TRANSPONDER = CATEGORIAS_TRANSPONDER_BASE;
 
 // Agrupa controles por prefijo (XK, XS, XN etc. para Xhorse; B, NB, ZB para KD)
 function getSubgrupo(nombre, categoria) {
@@ -68,12 +67,71 @@ function getSubgrupo(nombre, categoria) {
   return null;
 }
 
+// ============================================================
+// Rotación de stock
+// ============================================================
+
+// Cuántas unidades salieron por mes de un producto, mirando los movimientos de
+// salida de los últimos `dias` días.
+export function consumoMensual(producto, movimientos, dias = 90) {
+  const desde = Date.now() - dias * 24 * 60 * 60 * 1000;
+  let salidas = 0;
+  for (const m of movimientos) {
+    if (m.productoId !== producto.id || m.tipo !== "salida") continue;
+    const f = parseFechaLocal(m.fecha);
+    if (f && f.getTime() >= desde) salidas += Number(m.cantidad) || 1;
+  }
+  return (salidas / dias) * 30;
+}
+
+// Días de stock que quedan al ritmo de consumo actual.
+// null = no hay consumo registrado, no se puede proyectar.
+export function diasDeCobertura(producto, movimientos, dias = 90) {
+  const porMes = consumoMensual(producto, movimientos, dias);
+  if (porMes <= 0) return null;
+  return Math.round((Number(producto.stock) || 0) / (porMes / 30));
+}
+
+export function nivelCobertura(dias) {
+  if (dias === null) return "sin-datos";
+  if (dias < 15) return "critico";
+  if (dias < 45) return "alerta";
+  return "ok";
+}
+
+// Plata inmovilizada en bodega: stock × costo unitario
+export function valorInventario(inventario) {
+  return inventario.reduce((s, p) => s + (Number(p.stock) || 0) * (Number(p.costoUnitario) || 0), 0);
+}
+
+// Productos que necesitan reposición: por días de cobertura si hay historial,
+// y si no, por el stock mínimo de siempre.
+export function productosParaReponer(inventario, movimientos) {
+  return inventario
+    .map(p => {
+      const dias = diasDeCobertura(p, movimientos);
+      const nivel = nivelCobertura(dias);
+      const bajoMinimo = Number(p.stock) <= Number(p.stockMinimo || 0);
+      return { producto: p, dias, nivel, bajoMinimo };
+    })
+    .filter(x => x.nivel === "critico" || x.nivel === "alerta" || (x.dias === null && x.bajoMinimo))
+    .sort((a, b) => {
+      if (a.dias === null) return 1;
+      if (b.dias === null) return -1;
+      return a.dias - b.dias;
+    });
+}
+
+function iconoDe(p) {
+  if (esCategoria(p, CATEGORIAS_CONTROL)) return "device-remote";
+  if (esCategoria(p, CATEGORIA_CHIP)) return "key-filled";
+  if (esCategoria(p, CATEGORIAS_ESPADIN) || esCategoria(p, CATEGORIAS_LLAVE_VIRGEN)) return "key";
+  return "box";
+}
+
 function renderItemCard(p) {
   const isBajo = Number(p.stock) <= Number(p.stockMinimo);
-  const icono = CATEGORIAS_CONTROL.includes(p.categoria) ? "device-remote"
-    : p.categoria === "Espadín" ? "key"
-    : (p.categoria || "").toUpperCase() === "CHIP" ? "key-filled"
-    : "box";
+  const icono = iconoDe(p);
   return `
     <div class="inv-card" data-open-producto="${p.id}">
       <div class="inv-card-img">
@@ -135,13 +193,13 @@ export function exportarDatosCSV(trabajos, inventario) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `respaldo-cerrauto-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `respaldo-cerrauto-${todayInputValue()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 export function renderInventarioView(state) {
-  const { inventario } = state;
+  const { inventario, movimientos = [] } = state;
 
   if (!inventario.length) {
     return `
@@ -154,7 +212,8 @@ export function renderInventarioView(state) {
     `;
   }
 
-  const bajosStock = inventario.filter(p => Number(p.stock) <= Number(p.stockMinimo));
+  const reponer = productosParaReponer(inventario, movimientos);
+  const capital = valorInventario(inventario);
   const todasCats = [...new Set([...CATEGORIAS, ...inventario.map(p => p.categoria || "Otro")])];
   const grupos = {};
   for (const cat of todasCats) grupos[cat] = [];
@@ -166,17 +225,27 @@ export function renderInventarioView(state) {
 
   let html = `
     <div class="view-title">Stock</div>
-    <div class="view-subtitle">${inventario.length} producto${inventario.length === 1 ? "" : "s"} en inventario</div>
+    <div class="view-subtitle">${inventario.length} producto${inventario.length === 1 ? "" : "s"} · ${formatCLP(capital)} en bodega</div>
   `;
 
-  if (bajosStock.length) {
+  if (reponer.length) {
     html += `
-      <div class="card" style="border-color:var(--danger);background:var(--danger-bg);margin-bottom:14px;">
-        <div class="card-row">
-          <p class="card-meta" style="color:var(--danger);margin:0;">
-            <i class="ti ti-alert-triangle"></i> ${bajosStock.length} producto${bajosStock.length === 1 ? "" : "s"} con stock bajo
-          </p>
-        </div>
+      <div class="detail-section-title">Hay que reponer</div>
+      <div class="card" style="margin-bottom:14px;padding:6px 14px;">
+        ${reponer.slice(0, 6).map(({ producto: p, dias, nivel }) => `
+          <div class="cobertura-row" data-open-producto-alerta="${p.id}">
+            <span class="cobertura-punto ${nivel}"></span>
+            <div class="cobertura-info">
+              <div class="cobertura-nombre">${escapeHtml(p.nombre)}</div>
+              <div class="cobertura-meta">
+                Quedan ${p.stock}${dias !== null ? ` · consumo ${(consumoMensual(p, movimientos)).toFixed(1)}/mes` : " · sin historial de consumo"}
+              </div>
+            </div>
+            <span class="cobertura-dias ${nivel}">${dias !== null ? dias + " días" : "bajo mínimo"}</span>
+            <i class="ti ti-chevron-right cobertura-chevron"></i>
+          </div>
+        `).join("")}
+        ${reponer.length > 6 ? `<p class="cobertura-mas">y ${reponer.length - 6} más</p>` : ""}
       </div>
     `;
   }
@@ -308,9 +377,15 @@ export function renderProductoForm(producto = null) {
   `;
 }
 
-export function renderProductoDetail(p) {
+export function renderProductoDetail(p, movimientos = []) {
   const isBajo = Number(p.stock) <= Number(p.stockMinimo);
   const margen = (Number(p.precioVenta) || 0) - (Number(p.costoUnitario) || 0);
+  const dias = diasDeCobertura(p, movimientos);
+  const nivel = nivelCobertura(dias);
+  const porMes = consumoMensual(p, movimientos);
+  const inmovilizado = (Number(p.stock) || 0) * (Number(p.costoUnitario) || 0);
+  const etiquetaNivel = { critico: "Reponer ahora", alerta: "Reponer pronto", ok: "Stock ok", "sin-datos": isBajo ? "Bajo el mínimo" : "Stock ok" }[nivel];
+  const claseBadge = nivel === "critico" ? "danger" : nivel === "alerta" ? "warn" : (isBajo && nivel === "sin-datos" ? "danger" : "ok");
   return `
     <div class="sheet-handle"></div>
     <div class="sheet-header">
@@ -324,18 +399,21 @@ export function renderProductoDetail(p) {
       </div>` : ""}
 
     <div class="detail-header">
-      <span class="badge ${isBajo ? "danger" : "ok"}">${isBajo ? "Stock bajo" : "Stock ok"}</span>
+      <span class="badge ${claseBadge}">${etiquetaNivel}</span>
     </div>
 
     <div class="kv-row"><span class="kv-label">Producto</span><span class="kv-value">${escapeHtml(p.nombre)}</span></div>
     <div class="kv-row"><span class="kv-label">Categoría</span><span class="kv-value">${escapeHtml(p.categoria || "—")}</span></div>
-    ${CATEGORIAS_CONTROL.includes(p.categoria) ? `<div class="kv-row"><span class="kv-label">¿Usa pila CR2032?</span><span class="kv-value">${p.usaPila === false ? "No" : "Sí"}</span></div>` : ""}
+    ${esCategoria(p, CATEGORIAS_CONTROL) ? `<div class="kv-row"><span class="kv-label">¿Usa pila CR2032?</span><span class="kv-value">${p.usaPila === false ? "No" : "Sí"}</span></div>` : ""}
     <div class="kv-row"><span class="kv-label">Compatible con</span><span class="kv-value">${escapeHtml(p.compatibilidad || "—")}</span></div>
     <div class="kv-row"><span class="kv-label">Stock actual</span><span class="kv-value mono">${p.stock}</span></div>
     <div class="kv-row"><span class="kv-label">Stock mínimo</span><span class="kv-value mono">${p.stockMinimo ?? 0}</span></div>
+    <div class="kv-row"><span class="kv-label">Consumo</span><span class="kv-value mono">${porMes > 0 ? porMes.toFixed(1) + " / mes" : "sin datos"}</span></div>
+    <div class="kv-row"><span class="kv-label">Cobertura</span><span class="kv-value mono" style="color:var(--${nivel === "critico" ? "danger" : nivel === "alerta" ? "warn" : "ok"})">${dias !== null ? dias + " días" : "—"}</span></div>
     <div class="kv-row"><span class="kv-label">Costo unitario</span><span class="kv-value mono">${formatCLP(p.costoUnitario)}</span></div>
     <div class="kv-row"><span class="kv-label">Precio de venta</span><span class="kv-value mono">${formatCLP(p.precioVenta)}</span></div>
     <div class="kv-row"><span class="kv-label">Margen estimado</span><span class="kv-value mono" style="color:var(--ok)">${formatCLP(margen)}</span></div>
+    <div class="kv-row"><span class="kv-label">Plata inmovilizada</span><span class="kv-value mono">${formatCLP(inmovilizado)}</span></div>
     <div class="kv-row"><span class="kv-label">Proveedor</span><span class="kv-value">${escapeHtml(p.proveedor || "—")}</span></div>
 
     <div class="detail-section-title">Ajustar stock</div>
@@ -398,8 +476,10 @@ export async function saveProducto(uidUser, data, existingId = null) {
   }
 }
 
-export async function deleteProducto(uidUser, id) {
+export async function deleteProducto(uidUser, producto) {
+  const id = typeof producto === "string" ? producto : producto.id;
   await deleteItem(uidUser, "inventario", id);
+  if (producto?.fotoUrl) borrarMedia({ url: producto.fotoUrl, publicId: producto.fotoPublicId, type: "image" });
   showToast("Producto eliminado", "success");
 }
 
@@ -414,22 +494,6 @@ export async function adjustStock(uidUser, producto, delta, motivo = null) {
     stockAnterior: Number(producto.stock),
     stockNuevo: nuevoStock,
     motivo: motivo || (delta > 0 ? "Ajuste manual (+)" : "Ajuste manual (−)")
-  });
-}
-
-export async function descontarStockPorId(uidUser, inventario, productoId, motivo = "Usado en trabajo") {
-  const producto = inventario.find(p => p.id === productoId);
-  if (!producto) return;
-  const nuevoStock = Math.max(0, Number(producto.stock) - 1);
-  await updateItem(uidUser, "inventario", productoId, { stock: nuevoStock });
-  await registrarMovimiento(uidUser, {
-    productoId,
-    productoNombre: producto.nombre,
-    tipo: "salida",
-    cantidad: 1,
-    stockAnterior: Number(producto.stock),
-    stockNuevo: nuevoStock,
-    motivo
   });
 }
 

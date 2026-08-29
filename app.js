@@ -3,14 +3,18 @@
 // ============================================================
 import { auth, loginWithGoogle, logout, watchAuth, watchCollection, updateItem } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
-import { showToast, formatDate } from "./helpers.js";
+import { showToast, formatDate, escapeHtml, confirmar, telefonoWhatsApp } from "./helpers.js";
 import { renderDashboard, renderDashboardDetail } from "./dashboard.js";
+import { PERIODOS } from "./metricas.js";
 import { sugerirMarcas, sugerirModelos } from "./vehiculos.js";
-import { getNombreTaller, getLogoTaller, setNombreTaller, setLogoTaller, renderConfigTaller } from "./taller.js";
+import {
+  cargarConfigTaller, guardarConfigTaller, getConfigTallerActual,
+  getNombreTaller, getLogoTaller, setConfigLocal, renderConfigTaller
+} from "./taller.js";
 import {
   renderTrabajosView, renderTrabajoForm, renderTrabajoDetail,
-  readTrabajoForm, saveTrabajo, saveTrabajoYDevolverId, deleteTrabajo, addMediaToTrabajo,
-  removeMediaFromTrabajo, calcularCostoAutomatico, devolverInsumosAlStock, generarMensajeWhatsApp
+  readTrabajoForm, saveTrabajo, deleteTrabajo, addMediaToTrabajo,
+  removeMediaFromTrabajo, calcularCostoAutomatico, generarMensajeWhatsApp
 } from "./trabajos.js";
 import {
   renderPagosView, renderPagoForm, renderPagoDetail, readPagoForm, savePago, deletePago
@@ -18,51 +22,122 @@ import {
 import {
   renderInventarioView, renderProductoForm, renderProductoDetail,
   readProductoForm, saveProducto, deleteProducto, adjustStock,
-  subirFotoProducto, CATEGORIAS_CONTROL, getCategoriaTransponder, exportarDatosCSV, renderHistorialProducto
+  subirFotoProducto, exportarDatosCSV, renderHistorialProducto
 } from "./inventario.js";
 
 const state = {
   user: null,
-  view: "inicio", // inicio | trabajos | pagos | inventario
+  view: "inicio",       // inicio | trabajos | pagos | inventario
+  periodo: localStorage.getItem("cerrauto_periodo") || "mes",
   trabajos: [],
   pagos: [],
   inventario: [],
   movimientos: [],
+  cargado: { trabajos: false, pagos: false, inventario: false },
+  conexion: { error: null, desdeCache: false },
+  filtros: {},          // se conserva entre re-renders
   unsubscribers: [],
-  sheet: null // { type, payload }
+  sheet: null           // { type, id }
 };
 
 const root = document.getElementById("app");
 
 // ---------------- Auth ----------------
 
-watchAuth((user) => {
+// Avisa al respaldo de index.html que los módulos cargaron bien, para que no
+// reemplace la pantalla por el mensaje de error.
+window.dispatchEvent(new Event("cerrauto:listo"));
+
+// Accesos directos del ícono instalado: ?vista=inventario, ?accion=nuevo-trabajo
+const params = new URLSearchParams(location.search);
+const vistaInicial = params.get("vista");
+const accionInicial = params.get("accion");
+if (["inicio", "trabajos", "pagos", "inventario"].includes(vistaInicial)) {
+  state.view = vistaInicial;
+}
+
+watchAuth(async (user) => {
   state.user = user;
   if (user) {
+    await cargarConfigTaller(user.uid);
     subscribeData();
     renderApp();
+    if (accionInicial === "nuevo-trabajo") {
+      openSheet("trabajo-form");
+      history.replaceState(null, "", location.pathname);
+    }
   } else {
     state.unsubscribers.forEach((fn) => fn());
     state.unsubscribers = [];
+    state.cargado = { trabajos: false, pagos: false, inventario: false };
     renderLogin();
   }
 });
 
+// Recibe los datos de una colección. Ante un error NO se vacía la lista: se
+// conserva lo último bueno y se avisa arriba, porque una lista vacía se
+// confunde con "no tienes nada guardado".
+function recibir(nombre, asignar, { render = true } = {}) {
+  return (items, meta = {}) => {
+    if (meta.error) {
+      state.conexion = { error: meta.error, desdeCache: true };
+    } else {
+      if (items) asignar(items);
+      state.cargado[nombre] = true;
+      state.conexion = { error: null, desdeCache: !!meta.desdeCache };
+    }
+    if (render) renderCurrentView();
+    else actualizarBandaConexion();
+  };
+}
+
 function subscribeData() {
   state.unsubscribers.forEach((fn) => fn());
   state.unsubscribers = [
-    watchCollection(state.user.uid, "trabajos", (items) => { state.trabajos = items; renderCurrentView(); }),
-    watchCollection(state.user.uid, "pagos", (items) => { state.pagos = items; renderCurrentView(); }),
-    watchCollection(state.user.uid, "inventario", (items) => { state.inventario = items; renderCurrentView(); }),
-    watchCollection(state.user.uid, "movimientos", (items) => { state.movimientos = items; }, "fecha")
+    watchCollection(state.user.uid, "trabajos",    recibir("trabajos",   (i) => { state.trabajos = i; })),
+    watchCollection(state.user.uid, "pagos",       recibir("pagos",      (i) => { state.pagos = i; })),
+    watchCollection(state.user.uid, "inventario",  recibir("inventario", (i) => { state.inventario = i; })),
+    watchCollection(state.user.uid, "movimientos", recibir("movimientos",(i) => { state.movimientos = i; }), "fecha")
   ];
 }
 
+// Banda de estado de conexión bajo la barra superior
+function actualizarBandaConexion() {
+  const banda = document.getElementById("banda-conexion");
+  if (!banda) return;
+  const { error, desdeCache } = state.conexion;
+  const sinRed = !navigator.onLine;
+
+  if (error) {
+    banda.className = "banda-conexion error";
+    banda.innerHTML = `<i class="ti ti-alert-triangle"></i> No se pudo conectar. Estás viendo los últimos datos guardados.`;
+  } else if (sinRed || desdeCache) {
+    banda.className = "banda-conexion offline";
+    banda.innerHTML = `<i class="ti ti-cloud-off"></i> Sin conexión — los cambios se guardan y se suben cuando vuelva la señal.`;
+  } else {
+    banda.className = "banda-conexion oculta";
+    banda.innerHTML = "";
+  }
+}
+
+window.addEventListener("online", actualizarBandaConexion);
+window.addEventListener("offline", actualizarBandaConexion);
+
+// Separa "Llaves CerrAuto" en "Llaves" + "CerrAuto" para pintar la última
+// palabra con el color de acento.
+function partirNombre(nombre) {
+  const partes = String(nombre || "").trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return { principal: "Llaves", final: "CerrAuto" };
+  if (partes.length === 1) return { principal: partes[0], final: "" };
+  return { principal: partes.slice(0, -1).join(" "), final: partes[partes.length - 1] };
+}
+
 function renderLogin() {
+  const { principal, final } = partirNombre(getNombreTaller());
   root.innerHTML = `
     <div class="login-screen">
       ${keyIconSvg(64)}
-      <div class="login-title">${getNombreTaller().split(" ").slice(0,-1).join(" ")||"Llaves"} <span>${getNombreTaller().split(" ").slice(-1)[0]||"CerrAuto"}</span></div>
+      <div class="login-title">${escapeHtml(principal)} <span>${escapeHtml(final)}</span></div>
       <div class="login-subtitle">Tus trabajos, pagos e inventario de cerrajería automotriz, en un solo lugar.</div>
       <button class="btn btn-google" id="btn-login">
         <i class="ti ti-brand-google"></i> Continuar con Google
@@ -89,22 +164,20 @@ function applyTema() {
 function renderApp() {
   applyTema();
   const logo = getLogoTaller();
-  const nombre = getNombreTaller();
-  const partes = nombre.split(" ");
-  const nombrePrincipal = partes.slice(0, -1).join(" ") || nombre;
-  const nombreFinal = partes.length > 1 ? partes[partes.length - 1] : "";
+  const { principal, final } = partirNombre(getNombreTaller());
+  const temaActual = document.documentElement.dataset.tema === "light" ? "light" : "dark";
 
   root.innerHTML = `
     <div class="topbar">
       <div class="brand">
         ${logo
-          ? `<img src="${logo}" class="brand-logo-img" alt="logo">`
+          ? `<img src="${escapeHtml(logo)}" class="brand-logo-img" alt="">`
           : keyIconSvg(28)}
-        <div class="brand-text">${nombrePrincipal} <span>${nombreFinal}</span></div>
+        <div class="brand-text">${escapeHtml(principal)} <span>${escapeHtml(final)}</span></div>
       </div>
       <div style="display:flex;gap:4px;align-items:center;">
         <button class="topbar-action" id="btn-toggle-tema" title="Cambiar modo">
-          <i class="ti ti-sun"></i>
+          <i class="ti ti-${temaActual === "light" ? "moon" : "sun"}"></i>
         </button>
         <button class="topbar-action" id="btn-config-taller" title="Configurar taller">
           <i class="ti ti-settings"></i>
@@ -114,6 +187,7 @@ function renderApp() {
         </button>
       </div>
     </div>
+    <div class="banda-conexion oculta" id="banda-conexion"></div>
     <div class="view" id="view-container"></div>
     <button class="fab" id="fab-add"><i class="ti ti-plus"></i></button>
     <nav class="bottomnav">
@@ -127,6 +201,12 @@ function renderApp() {
   `;
 
   document.getElementById("btn-logout").addEventListener("click", async () => {
+    if (!await confirmar({
+      titulo: "¿Cerrar sesión?",
+      mensaje: "Vas a tener que volver a entrar con tu cuenta de Google.",
+      aceptar: "Cerrar sesión",
+      peligro: false
+    })) return;
     await logout();
     showToast("Sesión cerrada", "success");
   });
@@ -148,10 +228,7 @@ function renderApp() {
   });
 
   document.querySelectorAll(".navbtn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.view = btn.dataset.view;
-      renderCurrentView();
-    });
+    btn.addEventListener("click", () => cambiarVista(btn.dataset.view));
   });
 
   document.getElementById("fab-add").addEventListener("click", () => {
@@ -165,81 +242,87 @@ function renderApp() {
 
 function renderCurrentView() {
   if (!state.user) return;
+
   document.querySelectorAll(".navbtn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.view === state.view);
   });
 
   // Mostrar/ocultar FAB según la vista
   const fab = document.getElementById("fab-add");
-  if (fab) {
-    fab.classList.toggle("hidden", state.view === "inicio");
-  }
+  if (fab) fab.classList.toggle("hidden", state.view === "inicio");
 
   const container = document.getElementById("view-container");
   if (!container) return;
 
+  actualizarBandaConexion();
+
+  // Se conserva el scroll para que un cambio llegado de la nube no te mueva
+  // la pantalla mientras estás mirando la lista.
+  const scrollPrevio = window.scrollY;
+
+  if (!state.cargado.trabajos && !state.cargado.inventario && !state.conexion.error) {
+    container.innerHTML = renderEsqueleto();
+    return;
+  }
+
   if (state.view === "inicio") {
     container.innerHTML = renderDashboard(state);
-    // Botón acceso rápido nuevo trabajo
+    bindSelectorPeriodo(container);
+
     document.getElementById("btn-dash-nuevo-trabajo")?.addEventListener("click", () => {
       openSheet("trabajo-form");
     });
-    // Alertas de stock bajo → abren el producto directamente
-    container.querySelectorAll("[data-open-producto-alerta]").forEach(row => {
+
+    container.querySelectorAll("[data-open-producto-alerta]").forEach((row) => {
       row.addEventListener("click", () => {
-        state.view = "inventario";
-        renderCurrentView();
-        setTimeout(() => openSheet("producto-detail", row.dataset.openProductoAlerta), 100);
+        cambiarVista("inventario");
+        openSheet("producto-detail", row.dataset.openProductoAlerta);
       });
     });
 
-    // Stat cards clickeables
-    container.querySelectorAll("[data-dash-detail]").forEach(card => {
-      card.addEventListener("click", () => openSheet("dash-detail", card.dataset.dashDetail));
+    container.querySelector("[data-ir-a]")?.addEventListener("click", (e) => {
+      cambiarVista(e.currentTarget.dataset.irA);
     });
-    // Último trabajo clickeable
+
+    container.querySelectorAll("[data-dash-detail]").forEach((card) => {
+      const abrir = () => openSheet("dash-detail", card.dataset.dashDetail);
+      card.addEventListener("click", abrir);
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrir(); }
+      });
+    });
+
     const cardUltimo = container.querySelector("[data-open-trabajo]");
-    if (cardUltimo) {
-      cardUltimo.addEventListener("click", () => openSheet("trabajo-detail", cardUltimo.dataset.openTrabajo));
-    }
+    cardUltimo?.addEventListener("click", () => openSheet("trabajo-detail", cardUltimo.dataset.openTrabajo));
+
   } else if (state.view === "trabajos") {
     container.innerHTML = renderTrabajosView(state);
     container.querySelectorAll("[data-open-trabajo]").forEach((card) => {
       card.addEventListener("click", () => openSheet("trabajo-detail", card.dataset.openTrabajo));
     });
-    // Buscador + filtros
-    function aplicarFiltros() {
-      const q     = (document.getElementById("buscar-trabajo")?.value || "").toLowerCase().trim();
-      const marca = (document.getElementById("filtro-marca")?.value   || "").toLowerCase().trim();
-      const tipo  = (document.getElementById("filtro-tipo")?.value    || "").toLowerCase().trim();
-      const mes   = (document.getElementById("filtro-mes")?.value     || "").trim();
-      const cards = container.querySelectorAll(".trabajo-card");
-      let visible = 0;
-      cards.forEach(c => {
-        const search = (c.dataset.search || "");
-        const fecha  = (c.dataset.fecha  || "");
-        const matchQ     = !q     || search.includes(q);
-        const matchMarca = !marca || search.includes(marca);
-        const matchTipo  = !tipo  || search.includes(tipo);
-        const matchMes   = !mes   || fecha.startsWith(mes);
-        const match = matchQ && matchMarca && matchTipo && matchMes;
-        c.classList.toggle("hidden", !match);
-        if (match) visible++;
-      });
-      const sinRes = document.getElementById("sin-resultados");
-      if (sinRes) sinRes.classList.toggle("hidden", visible > 0);
-    }
-    ["buscar-trabajo","filtro-marca","filtro-tipo","filtro-mes"].forEach(id => {
-      document.getElementById(id)?.addEventListener("input",  aplicarFiltros);
-      document.getElementById(id)?.addEventListener("change", aplicarFiltros);
-    });
+    bindFiltrosTrabajos(container);
+
   } else if (state.view === "pagos") {
     container.innerHTML = renderPagosView(state);
+    bindSelectorPeriodo(container);
     container.querySelectorAll("[data-open-pago]").forEach((card) => {
       card.addEventListener("click", () => openSheet("pago-detail", card.dataset.openPago));
     });
+    container.querySelectorAll("[data-dash-detail]").forEach((card) => {
+      const abrir = () => openSheet("dash-detail", card.dataset.dashDetail);
+      card.addEventListener("click", abrir);
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrir(); }
+      });
+    });
+
   } else {
     container.innerHTML = renderInventarioView(state);
+
+    container.querySelectorAll("[data-open-producto-alerta]").forEach((row) => {
+      row.addEventListener("click", () => openSheet("producto-detail", row.dataset.openProductoAlerta));
+    });
+
     container.querySelectorAll("[data-open-producto]").forEach((card) => {
       card.addEventListener("click", (e) => {
         // No abrir el detalle si se tocó un botón rápido de stock
@@ -249,34 +332,118 @@ function renderCurrentView() {
     });
 
     // Botones rápidos de stock (+/-) sin abrir el detalle
-    container.querySelectorAll("[data-stock-menos]").forEach(btn => {
+    container.querySelectorAll("[data-stock-menos]").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        const prod = state.inventario.find(p => p.id === btn.dataset.stockMenos);
-        if (prod) await adjustStock(state.user.uid, prod, -1);
+        const prod = state.inventario.find((p) => p.id === btn.dataset.stockMenos);
+        if (!prod) return;
+        if (Number(prod.stock) <= 0) return showToast(`${prod.nombre} ya está en cero`, "error");
+        await adjustStock(state.user.uid, prod, -1);
       });
     });
-    container.querySelectorAll("[data-stock-mas]").forEach(btn => {
+    container.querySelectorAll("[data-stock-mas]").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        const prod = state.inventario.find(p => p.id === btn.dataset.stockMas);
+        const prod = state.inventario.find((p) => p.id === btn.dataset.stockMas);
         if (prod) await adjustStock(state.user.uid, prod, 1);
       });
     });
   }
+
+  if (scrollPrevio) window.scrollTo({ top: scrollPrevio, behavior: "instant" });
 }
 
-// ---------------- Helpers de creación de trabajo con media ----------------
-
-async function uploadMediaWrapper(file, onProgress) {
-  return uploadMedia(file, onProgress);
+function cambiarVista(vista) {
+  state.view = vista;
+  state.filtros = {};
+  renderCurrentView();
+  window.scrollTo({ top: 0, behavior: "instant" });
 }
 
-async function saveTrabajoConMedia(uidUser, data, inventario, mediaLocal) {
-  const newId = await saveTrabajoYDevolverId(uidUser, data, inventario);
-  if (mediaLocal.length) {
-    await updateItem(uidUser, "trabajos", newId, { media: mediaLocal });
+// Mientras cargan los datos se muestra la forma de la pantalla, no un spinner
+// sobre fondo negro: se siente más rápido y no queda pegado si algo falla.
+function renderEsqueleto() {
+  return `
+    <div class="sk-linea sk-titulo"></div>
+    <div class="sk-linea sk-sub"></div>
+    <div class="sk-hero"></div>
+    <div class="sk-grid">
+      <div class="sk-mini"></div><div class="sk-mini"></div>
+      <div class="sk-mini"></div><div class="sk-mini"></div>
+    </div>
+    <div class="sk-linea sk-sub"></div>
+    <div class="sk-card"></div>
+    <div class="sk-card"></div>
+  `;
+}
+
+function bindSelectorPeriodo(container) {
+  container.querySelectorAll("#periodo-selector button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const p = btn.dataset.periodo;
+      if (!PERIODOS.some((x) => x.id === p) || p === state.periodo) return;
+      state.periodo = p;
+      localStorage.setItem("cerrauto_periodo", p);
+      renderCurrentView();
+    });
+  });
+}
+
+// Los filtros viven en state.filtros para que un cambio llegado de la nube no
+// borre lo que estabas escribiendo en el buscador.
+function bindFiltrosTrabajos(container) {
+  const campos = ["buscar-trabajo", "filtro-marca", "filtro-tipo", "filtro-mes"];
+
+  const aplicar = () => {
+    const q = (state.filtros["buscar-trabajo"] || "").toLowerCase().trim();
+    const marca = (state.filtros["filtro-marca"] || "").toLowerCase().trim();
+    const tipo = (state.filtros["filtro-tipo"] || "").toLowerCase().trim();
+    const mes = (state.filtros["filtro-mes"] || "").trim();
+
+    let visibles = 0;
+    container.querySelectorAll(".trabajo-card").forEach((c) => {
+      const search = c.dataset.search || "";
+      const fecha = c.dataset.fecha || "";
+      const match = (!q || search.includes(q))
+        && (!marca || search.includes(marca))
+        && (!tipo || search.includes(tipo))
+        && (!mes || fecha.startsWith(mes));
+      c.classList.toggle("hidden", !match);
+      if (match) visibles++;
+    });
+
+    const sinRes = document.getElementById("sin-resultados");
+    if (sinRes) sinRes.classList.toggle("hidden", visibles > 0);
+
+    const contador = document.getElementById("contador-trabajos");
+    if (contador) {
+      const hayFiltro = q || marca || tipo || mes;
+      contador.textContent = hayFiltro
+        ? `${visibles} de ${state.trabajos.length} trabajos`
+        : `${state.trabajos.length} trabajo${state.trabajos.length === 1 ? "" : "s"} registrado${state.trabajos.length === 1 ? "" : "s"}`;
+    }
+  };
+
+  for (const id of campos) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    // Restaurar lo que el usuario ya había escrito o elegido
+    if (state.filtros[id] != null) el.value = state.filtros[id];
+    const onChange = () => { state.filtros[id] = el.value; aplicar(); };
+    el.addEventListener("input", onChange);
+    el.addEventListener("change", onChange);
   }
+
+  document.getElementById("btn-limpiar-filtros")?.addEventListener("click", () => {
+    state.filtros = {};
+    for (const id of campos) {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    }
+    aplicar();
+  });
+
+  aplicar();
 }
 
 // ---------------- Sheets (modales inferiores) ----------------
@@ -423,6 +590,12 @@ function renderSheet() {
         : null;
       const trCosto = trCard ? Number(trCard.dataset.trCosto || 0) : 0;
 
+      // Si el espadín viene del inventario, se usa su costo real
+      const espCard = inputEspadinId?.value
+        ? content.querySelector(`[data-esp-id="${inputEspadinId.value}"]`)
+        : null;
+      const espCosto = espCard ? Number(espCard.dataset.espCosto || 0) : 0;
+
       const base = calcularCostoAutomatico({
         tipoServicio: selectTipoServicio?.value,
         controlCosto: ctrlCosto,
@@ -430,7 +603,7 @@ function renderSheet() {
         espadinSeleccionado: espadinSel,
         pincode: inputPincode?.value
       });
-      if (inputCostoTotal) inputCostoTotal.value = base + lvCosto + trCosto;
+      if (inputCostoTotal) inputCostoTotal.value = base + lvCosto + trCosto + espCosto;
     }
 
     // Click en card de control
@@ -617,22 +790,25 @@ function renderSheet() {
     const tile = document.getElementById("media-upload-tile");
     mediaInput.addEventListener("change", async (e) => {
       const files = Array.from(e.target.files);
+      const etiqueta = tile.querySelector("span");
+      tile.classList.add("uploading");
+      let i = 0;
       for (const file of files) {
-        tile.classList.add("uploading");
-        tile.querySelector("span").textContent = "Subiendo...";
+        i++;
+        const prefijo = files.length > 1 ? `${i}/${files.length} · ` : "";
+        etiqueta.textContent = prefijo + "Subiendo...";
         try {
-          const result = await uploadMediaWrapper(file, (pct) => {
-            tile.querySelector("span").textContent = pct + "%";
+          const result = await uploadMedia(file, (pct) => {
+            etiqueta.textContent = prefijo + pct + "%";
           });
           mediaLocal.push(result);
-          renderMediaTiles();
         } catch (err) {
           showToast(err.message || "No se pudo subir el archivo.", "error");
-        } finally {
-          tile.classList.remove("uploading");
-          tile.querySelector("span").textContent = "Agregar";
         }
       }
+      tile.classList.remove("uploading");
+      etiqueta.textContent = "Agregar";
+      renderMediaTiles();
       mediaInput.value = "";
     });
 
@@ -646,13 +822,13 @@ function renderSheet() {
       }
       const data = readTrabajoForm(e.target);
       try {
-        if (trabajo?.id) {
-          await saveTrabajo(state.user.uid, data, state.inventario, trabajo.id, mediaLocal, trabajo);
-        } else {
-          await saveTrabajoConMedia(state.user.uid, data, state.inventario, mediaLocal);
-        }
+        await saveTrabajo(
+          state.user.uid, data, state.inventario,
+          trabajo?.id || null, mediaLocal, trabajo?.id ? trabajo : null
+        );
         closeSheet();
       } catch (err) {
+        console.error(err);
         showToast("No se pudo guardar el trabajo.", "error");
         if (btnSubmit) {
           btnSubmit.disabled = false;
@@ -665,7 +841,7 @@ function renderSheet() {
   else if (type === "trabajo-detail") {
     const trabajo = state.trabajos.find((t) => t.id === id);
     if (!trabajo) return closeSheet();
-    content.innerHTML = renderTrabajoDetail(trabajo);
+    content.innerHTML = renderTrabajoDetail(trabajo, state.inventario);
     bindCloseButtons();
 
     document.getElementById("btn-edit-trabajo").addEventListener("click", () => openSheet("trabajo-form", trabajo.id));
@@ -685,50 +861,71 @@ function renderSheet() {
     // Compartir por WhatsApp
     document.getElementById("btn-compartir-trabajo")?.addEventListener("click", () => {
       const mensaje = generarMensajeWhatsApp(trabajo, getNombreTaller());
-      const tel = (trabajo.telefono || "").replace(/[^0-9]/g, "");
+      const tel = telefonoWhatsApp(trabajo.telefono);
       const url = tel
         ? `https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`
         : `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
-      window.open(url, "_blank");
+      window.open(url, "_blank", "noopener");
     });
+
     document.getElementById("btn-delete-trabajo").addEventListener("click", async () => {
-      if (confirm("¿Eliminar este trabajo? Los insumos usados volverán al stock.")) {
-        await devolverInsumosAlStock(state.user.uid, trabajo, state.inventario);
-        await deleteTrabajo(state.user.uid, trabajo.id);
+      const ok = await confirmar({
+        titulo: "¿Eliminar este trabajo?",
+        mensaje: "Los insumos que usó vuelven al stock. Esta acción no se puede deshacer.",
+        aceptar: "Eliminar"
+      });
+      if (!ok) return;
+      try {
+        await deleteTrabajo(state.user.uid, trabajo, state.inventario);
         closeSheet();
+      } catch (err) {
+        console.error(err);
+        showToast("No se pudo eliminar el trabajo.", "error");
       }
     });
 
     content.querySelectorAll("[data-remove-media-detail]").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        if (!confirm("¿Eliminar esta foto/video?")) return;
+        const ok = await confirmar({
+          titulo: "¿Eliminar esta foto?",
+          mensaje: "Se quita del trabajo y no se puede recuperar.",
+          aceptar: "Eliminar"
+        });
+        if (!ok) return;
         const index = Number(btn.dataset.removeMediaDetail);
-        const updatedMedia = await removeMediaFromTrabajo(state.user.uid, trabajo, index);
-        trabajo.media = updatedMedia;
+        trabajo.media = await removeMediaFromTrabajo(state.user.uid, trabajo, index);
         openSheet("trabajo-detail", trabajo.id);
       });
     });
 
+    // Se suben TODOS los archivos primero y recién al final se vuelve a dibujar
+    // el panel. Antes se redibujaba dentro del bucle y, del segundo archivo en
+    // adelante, el progreso se escribía en elementos que ya no estaban.
     const mediaInput = document.getElementById("media-input");
     const tile = document.getElementById("media-upload-tile");
     mediaInput.addEventListener("change", async (e) => {
       const files = Array.from(e.target.files);
+      const etiqueta = tile.querySelector("span");
+      tile.classList.add("uploading");
+      let i = 0;
+      let media = trabajo.media || [];
       for (const file of files) {
-        tile.classList.add("uploading");
-        tile.querySelector("span").textContent = "Subiendo...";
+        i++;
+        const prefijo = files.length > 1 ? `${i}/${files.length} · ` : "";
+        etiqueta.textContent = prefijo + "Subiendo...";
         try {
-          const updatedMedia = await addMediaToTrabajo(state.user.uid, trabajo, file, (pct) => {
-            tile.querySelector("span").textContent = pct + "%";
+          media = await addMediaToTrabajo(state.user.uid, { ...trabajo, media }, file, (pct) => {
+            etiqueta.textContent = prefijo + pct + "%";
           });
-          trabajo.media = updatedMedia;
-          openSheet("trabajo-detail", trabajo.id);
         } catch (err) {
           showToast(err.message || "No se pudo subir el archivo.", "error");
-          tile.classList.remove("uploading");
-          tile.querySelector("span").textContent = "Agregar";
         }
       }
+      trabajo.media = media;
+      tile.classList.remove("uploading");
+      etiqueta.textContent = "Agregar";
+      openSheet("trabajo-detail", trabajo.id);
     });
   }
 
@@ -760,10 +957,14 @@ function renderSheet() {
     });
 
     document.getElementById("btn-delete-pago").addEventListener("click", async () => {
-      if (confirm("¿Eliminar este gasto? Esta acción no se puede deshacer.")) {
-        await deletePago(state.user.uid, pago.id);
-        closeSheet();
-      }
+      const ok = await confirmar({
+        titulo: "¿Eliminar este gasto?",
+        mensaje: "Esta acción no se puede deshacer.",
+        aceptar: "Eliminar"
+      });
+      if (!ok) return;
+      await deletePago(state.user.uid, pago.id);
+      closeSheet();
     });
   }
 
@@ -843,7 +1044,7 @@ function renderSheet() {
   else if (type === "producto-detail") {
     const producto = state.inventario.find((p) => p.id === id);
     if (!producto) return closeSheet();
-    content.innerHTML = renderProductoDetail(producto);
+    content.innerHTML = renderProductoDetail(producto, state.movimientos || []);
     bindCloseButtons();
 
     // Renderizar historial de movimientos del producto
@@ -853,13 +1054,20 @@ function renderSheet() {
     }
 
     document.getElementById("btn-edit-producto").addEventListener("click", () => openSheet("producto-form", producto.id));
+
     document.getElementById("btn-delete-producto").addEventListener("click", async () => {
-      if (confirm("¿Eliminar este producto del inventario?")) {
-        await deleteProducto(state.user.uid, producto.id);
-        closeSheet();
-      }
+      const ok = await confirmar({
+        titulo: `¿Eliminar ${producto.nombre}?`,
+        mensaje: "Se borra del inventario junto con su foto. El historial de movimientos se conserva.",
+        aceptar: "Eliminar"
+      });
+      if (!ok) return;
+      await deleteProducto(state.user.uid, producto);
+      closeSheet();
     });
+
     document.getElementById("btn-stock-menos").addEventListener("click", async () => {
+      if (Number(producto.stock) <= 0) return showToast("Ya está en cero", "error");
       await adjustStock(state.user.uid, producto, -1);
       openSheet("producto-detail", producto.id);
     });
@@ -867,7 +1075,7 @@ function renderSheet() {
       await adjustStock(state.user.uid, producto, 1);
       openSheet("producto-detail", producto.id);
     });
-    }
+  }
 
   else if (type === "dash-detail") {
     // id contiene el tipo: trabajos-mes, ingresos-mes, costos-mes, ganancia-mes
@@ -883,56 +1091,81 @@ function renderSheet() {
   }
 
   else if (type === "config-taller") {
-    content.innerHTML = renderConfigTaller();
+    content.innerHTML = renderConfigTaller(state.user?.uid || "");
     bindCloseButtons();
 
-    // Preview de logo
+    // El logo se sube a Cloudinary y se guarda su URL. Antes se guardaba la
+    // imagen entera en base64 dentro de localStorage: podía pasarse del límite
+    // y además no viajaba a otro dispositivo.
     const inputLogo = document.getElementById("input-logo-taller");
-    if (inputLogo) {
-      inputLogo.addEventListener("change", (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const preview = document.getElementById("logo-preview");
-          if (preview) preview.innerHTML = `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
-          setLogoTaller(ev.target.result);
-        };
-        reader.readAsDataURL(file);
-      });
-    }
+    const progresoLogo = document.getElementById("logo-progress");
+    inputLogo?.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      progresoLogo?.classList.remove("hidden");
+      progresoLogo.textContent = "Subiendo logo...";
+      try {
+        const result = await uploadMedia(file, (pct) => {
+          progresoLogo.textContent = `Subiendo... ${pct}%`;
+        });
+        setConfigLocal({ logoUrl: result.url });
+        const preview = document.getElementById("logo-preview");
+        if (preview) preview.innerHTML = `<img src="${escapeHtml(result.url)}" alt="" style="width:100%;height:100%;object-fit:cover;">`;
+        progresoLogo.textContent = "✓ Logo listo — toca Guardar para aplicarlo";
+      } catch (err) {
+        progresoLogo.textContent = err.message || "No se pudo subir el logo.";
+        showToast("No se pudo subir el logo.", "error");
+      }
+    });
 
-    // Quitar logo
     document.getElementById("btn-remove-logo")?.addEventListener("click", () => {
-      localStorage.removeItem("cerrauto_taller_logo");
+      setConfigLocal({ logoUrl: null });
       openSheet("config-taller");
     });
 
     // Toggle de tema desde config
-    document.querySelectorAll("#tema-segmented button").forEach(btn => {
+    document.querySelectorAll("#tema-segmented button").forEach((btn) => {
       btn.addEventListener("click", () => {
         document.documentElement.dataset.tema = btn.dataset.tema;
         localStorage.setItem("cerrauto_tema", btn.dataset.tema);
-        document.querySelectorAll("#tema-segmented button").forEach(b =>
+        document.querySelectorAll("#tema-segmented button").forEach((b) =>
           b.classList.toggle("active", b === btn)
         );
       });
     });
 
-    // Guardar nombre
-    // Exportar respaldo de datos
     document.getElementById("btn-exportar-datos")?.addEventListener("click", () => {
       exportarDatosCSV(state.trabajos, state.inventario);
       showToast("Respaldo descargado", "success");
     });
 
-    document.getElementById("btn-guardar-taller").addEventListener("click", () => {
-      const nombre = document.getElementById("input-nombre-taller").value.trim();
-      setNombreTaller(nombre);
-      showToast("Configuración guardada", "success");
-      closeSheet();
-      renderApp();
-      renderCurrentView();
+    document.getElementById("btn-copiar-uid")?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(state.user.uid);
+        showToast("ID copiado", "success");
+      } catch {
+        showToast("Copia el ID a mano desde el recuadro", "error");
+      }
+    });
+
+    document.getElementById("btn-guardar-taller").addEventListener("click", async () => {
+      const btn = document.getElementById("btn-guardar-taller");
+      btn.disabled = true;
+      try {
+        await guardarConfigTaller(state.user.uid, {
+          nombre: document.getElementById("input-nombre-taller").value.trim() || "Llaves CerrAuto",
+          logoUrl: getConfigTallerActual().logoUrl,
+          precioPila: Number(document.getElementById("input-precio-pila").value) || 0,
+          precioEspadin: Number(document.getElementById("input-precio-espadin").value) || 0
+        });
+        showToast("Configuración guardada", "success");
+        closeSheet();
+        renderApp();
+      } catch (err) {
+        console.error(err);
+        showToast("No se pudo guardar. Revisa tu conexión.", "error");
+        btn.disabled = false;
+      }
     });
   }
 }

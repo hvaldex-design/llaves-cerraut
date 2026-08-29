@@ -1,0 +1,47 @@
+{
+  "name": "Llaves CerrAuto",
+  "short_name": "CerrAuto",
+  "description": "Trabajos, finanzas e inventario de cerrajería automotriz.",
+  "lang": "es-CL",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0D0F12",
+  "theme_color": "#0D0F12",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nuevo trabajo",
+      "short_name": "Nuevo",
+      "url": "./?accion=nuevo-trabajo",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ver stock",
+      "short_name": "Stock",
+      "url": "./?vista=inventario",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

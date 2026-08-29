@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview interno</title>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div class="topbar">
+      <div class="brand"><div class="brand-text">Llaves <span>CerrAuto</span></div></div>
+      <div style="display:flex;gap:4px;">
+        <button class="topbar-action"><i class="ti ti-sun"></i></button>
+        <button class="topbar-action"><i class="ti ti-settings"></i></button>
+      </div>
+    </div>
+    <div class="banda-conexion offline" id="banda-conexion"><i class="ti ti-cloud-off"></i> Sin conexión — los cambios se guardan y se suben cuando vuelva la señal.</div>
+    <div class="view" id="view-container">cargando…</div>
+    <nav class="bottomnav"><div class="bottomnav-inner">
+      <button class="navbtn active"><i class="ti ti-home"></i>Inicio</button>
+      <button class="navbtn"><i class="ti ti-key"></i>Trabajos</button>
+      <button class="navbtn"><i class="ti ti-chart-bar"></i>Finanzas</button>
+      <button class="navbtn"><i class="ti ti-box"></i>Stock</button>
+    </div></nav>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module">
+    import { renderDashboard, renderDashboardDetail } from "./dashboard.js";
+    import { renderPagosView } from "./pagos.js";
+    import { renderInventarioView, renderProductoDetail } from "./inventario.js";
+    import { renderTrabajosView, renderTrabajoDetail } from "./trabajos.js";
+    import { renderConfigTaller } from "./taller.js";
+
+    document.documentElement.dataset.tema = new URLSearchParams(location.search).get("tema") || "dark";
+
+    const hoy = new Date();
+    const dias = (n) => {
+      const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - n);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    };
+
+    const inventario = [
+      { id:"c1", nombre:"XKHY05EN", categoria:"Control Xhorse", compatibilidad:"Hyundai, Kia", stock:2, stockMinimo:2, costoUnitario:12500, precioVenta:35000, usaPila:true, proveedor:"Xhorse CL" },
+      { id:"c2", nombre:"XKTO00EN", categoria:"Control Xhorse", compatibilidad:"Toyota", stock:1, stockMinimo:2, costoUnitario:11800, precioVenta:32000, usaPila:true },
+      { id:"c3", nombre:"KD-B31", categoria:"Control KD", compatibilidad:"Nissan", stock:3, stockMinimo:1, costoUnitario:9800, precioVenta:28000, usaPila:true },
+      { id:"c4", nombre:"NB-Serie 12", categoria:"Control KD", compatibilidad:"Chevrolet", stock:9, stockMinimo:2, costoUnitario:10200, precioVenta:29000, usaPila:true },
+      { id:"t1", nombre:"Chip ID48", categoria:"CHIP", compatibilidad:"VW, Audi, Seat", stock:8, stockMinimo:3, costoUnitario:4200, precioVenta:15000 },
+      { id:"t2", nombre:"Chip 4D60", categoria:"chip", compatibilidad:"Ford", stock:14, stockMinimo:3, costoUnitario:3900, precioVenta:14000 },
+      { id:"e1", nombre:"TOY43R", categoria:"Espadin", compatibilidad:"Toyota, Chevrolet", stock:11, stockMinimo:3, costoUnitario:1200, precioVenta:5000 },
+      { id:"e2", nombre:"HU66", categoria:"Espadín", compatibilidad:"VW, Skoda, Audi", stock:6, stockMinimo:3, costoUnitario:1300, precioVenta:5000 },
+      { id:"lv1", nombre:"Llave virgen HYN14", categoria:"Llave virgen", compatibilidad:"Hyundai, Kia", stock:5, stockMinimo:2, costoUnitario:2100, precioVenta:9000 },
+      { id:"p1", nombre:"Pila CR2032", categoria:"Pila / Batería", stock:40, stockMinimo:10, costoUnitario:350, precioVenta:1500 }
+    ];
+
+    // Movimientos de salida repartidos en los últimos 90 días
+    const movimientos = [];
+    const ritmo = { c1:18, c2:9, c3:12, t1:21, e1:15, p1:42, c4:3 };
+    let mid = 0;
+    for (const [pid, total] of Object.entries(ritmo)) {
+      const prod = inventario.find(p => p.id === pid);
+      for (let i = 0; i < total; i++) {
+        const d = new Date(hoy.getTime() - Math.floor(i * (88 / total)) * 86400000);
+        movimientos.push({
+          id: "m" + (mid++), productoId: pid, productoNombre: prod.nombre,
+          tipo: "salida", cantidad: 1, stockAnterior: prod.stock + i + 1, stockNuevo: prod.stock + i,
+          motivo: "Usado en trabajo", fecha: d.toISOString()
+        });
+      }
+    }
+
+    // Trabajos: 12 meses de historial
+    const MARCAS = [["Toyota","Hilux"],["Hyundai","Accent"],["Kia","Morning"],["Chevrolet","Sail"],["Nissan","Versa"],["Toyota","Yaris"],["Suzuki","Swift"],["Mazda","Mazda 3"]];
+    const SERVICIOS = ["Duplicado","Pérdida de llaves","Llave simple","Apertura"];
+    const PRECIOS = { "Duplicado":45000, "Pérdida de llaves":85000, "Llave simple":22000, "Apertura":35000 };
+    const COSTOS  = { "Duplicado":16000, "Pérdida de llaves":31000, "Llave simple":5800, "Apertura":1200 };
+    const trabajos = [];
+    let semilla = 7;
+    const rnd = () => (semilla = (semilla * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 0; i < 140; i++) {
+      const [marca, modelo] = MARCAS[Math.floor(rnd() * MARCAS.length)];
+      const srv = SERVICIOS[Math.floor(rnd() * SERVICIOS.length)];
+      const diasAtras = Math.floor(rnd() * 360);
+      trabajos.push({
+        id: "t" + i,
+        fecha: dias(diasAtras),
+        cliente: ["Juan Pérez","María Soto","Taller Norte","","Carlos Díaz"][Math.floor(rnd()*5)],
+        telefono: "9 8765 4321",
+        vehiculoMarca: marca, vehiculoModelo: modelo, vehiculoAnio: String(2012 + Math.floor(rnd()*13)),
+        tipoServicio: srv,
+        sistema: ["Texas DST80","4D60","Texas Crypto",""][Math.floor(rnd()*4)],
+        fccId: "M3N-40821302", frecuencia: "433.92 MHz",
+        controlId: srv === "Apertura" ? "" : ["c1","c2","c3","c4"][Math.floor(rnd()*4)],
+        transponderInvId: rnd() > 0.6 ? "t1" : "",
+        espadinId: rnd() > 0.5 ? "e1" : "",
+        llaveVirgenId: srv === "Llave simple" ? "lv1" : "",
+        pincode: 0,
+        precioCobrado: Math.round(PRECIOS[srv] * (0.85 + rnd() * 0.35)),
+        costoTotal: Math.round(COSTOS[srv] * (0.85 + rnd() * 0.35)),
+        notas: "Programado con VVDI2.\nPin obtenido por OBD.",
+        media: []
+      });
+    }
+    trabajos[0].fecha = dias(1);
+
+    const pagos = [
+      { id:"g1", tipo:"gasto", descripcion:"Compra de controles Xhorse", monto:180000, fecha: dias(12), formaPago:"Transferencia" },
+      { id:"g2", tipo:"gasto", descripcion:"Cuota máquina de corte", monto:95000, fecha: dias(40), formaPago:"Efectivo" },
+      { id:"g3", tipo:"gasto", descripcion:"Bencina y traslados", monto:48000, fecha: dias(3), formaPago:"Efectivo" }
+    ];
+
+    const state = { trabajos, pagos, inventario, movimientos, periodo:"mes", user:{ uid:"UID_DE_PRUEBA_123456" } };
+
+    const vistas = {
+      inicio:     () => renderDashboard(state),
+      trabajos:   () => renderTrabajosView(state),
+      finanzas:   () => renderPagosView(state),
+      stock:      () => renderInventarioView(state),
+      detalleTrabajo: () => `<div class="sheet" style="position:static;max-height:none;">${renderTrabajoDetail(trabajos[0], inventario)}</div>`,
+      detalleProducto:() => `<div class="sheet" style="position:static;max-height:none;">${renderProductoDetail(inventario[0], movimientos)}</div>`,
+      detalleGanancia:() => `<div class="sheet" style="position:static;max-height:none;">${renderDashboardDetail("ganancia", state)}</div>`,
+      config:     () => `<div class="sheet" style="position:static;max-height:none;">${renderConfigTaller(state.user.uid)}</div>`
+    };
+
+    const cual = new URLSearchParams(location.search).get("v") || "inicio";
+    try {
+      document.getElementById("view-container").innerHTML = vistas[cual]();
+      console.log("PREVIEW OK:", cual);
+    } catch (e) {
+      document.getElementById("view-container").innerHTML = `<pre style="color:#E2483C;white-space:pre-wrap;font-size:12px;">${e.stack}</pre>`;
+      console.error("PREVIEW FALLÓ:", e);
+    }
+  </script>
+</body>
+</html>
