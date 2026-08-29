@@ -2,19 +2,26 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Lista blanca ────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // LISTA BLANCA — reemplaza PEGA_AQUI_TU_UID por tu ID de usuario
+    // ════════════════════════════════════════════════════════════════════════
     // Sin esto, cualquier persona con una cuenta de Google puede entrar al link
     // y crear su propia carpeta de datos, consumiendo tu cuota de Firestore.
     // Tus datos igual quedan privados, pero la cuota es tuya.
     //
-    // Para llenarla: abre la app → engranaje (arriba a la derecha) →
-    // "Tu ID de usuario" → copiar. Pega el valor acá abajo y publica las reglas
-    // desde la consola de Firebase (Firestore → Reglas → Publicar).
-    function esDueño() {
+    // Dónde encontrar tu ID:
+    //   Firebase Console → Compilación → Authentication → Users → columna
+    //   "Identificador de usuario" (son 28 letras y números).
+    //   También sale en la app: engranaje → "Tu ID de usuario" → copiar.
+    //
+    // OJO: si pegas un ID equivocado te quedas sin acceso a tus propios datos.
+    // No se pierde nada — se arregla volviendo a editar y publicar estas reglas.
+
+    function estaEnLaLista() {
       return request.auth != null
         && request.auth.uid in [
              'PEGA_AQUI_TU_UID'
-             // , 'UID_DE_UN_AYUDANTE'   ← agrega más entre comillas si hace falta
+             // , 'UID_DE_UN_AYUDANTE'   ← para agregar a alguien más
            ];
     }
 
@@ -22,32 +29,35 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    // ── Datos del usuario ───────────────────────────────────────────────────
+    // Validación de forma: evita que entre a la base un documento gigante o con
+    // un campo del tipo equivocado por un error de la app.
+    function datosValidos() {
+      let d = request.resource.data;
+      return d.size() < 60
+        && (!('stock' in d)         || d.stock is number)
+        && (!('stockMinimo' in d)   || d.stockMinimo is number)
+        && (!('costoUnitario' in d) || d.costoUnitario is number)
+        && (!('precioVenta' in d)   || d.precioVenta is number)
+        && (!('costoTotal' in d)    || d.costoTotal is number)
+        && (!('precioCobrado' in d) || d.precioCobrado is number)
+        && (!('monto' in d)         || d.monto is number)
+        && (!('nombre' in d)        || (d.nombre is string && d.nombre.size() <= 200))
+        && (!('notas' in d)         || (d.notas is string && d.notas.size() <= 5000))
+        && (!('media' in d)         || (d.media is list && d.media.size() <= 40));
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // DATOS DEL USUARIO
+    // ════════════════════════════════════════════════════════════════════════
     // Cada usuario solo puede leer y escribir DENTRO de su propia carpeta.
     // Nadie más (ni siquiera otro usuario logueado) puede ver tus datos.
+    // Cubre trabajos, pagos, inventario, movimientos y config.
+
     match /usuarios/{userId}/{coleccion}/{docId} {
-      allow read: if esSuCarpeta(userId) && esDueño();
-
-      allow create: if esSuCarpeta(userId) && esDueño() && datosValidos();
-      allow update: if esSuCarpeta(userId) && esDueño() && datosValidos();
-      allow delete: if esSuCarpeta(userId) && esDueño();
-
-      // Validación de forma: evita que un documento gigante o con campos
-      // raros entre a la base por error.
-      function datosValidos() {
-        let d = request.resource.data;
-        return d.size() < 60
-          && (!('stock' in d)         || d.stock is number)
-          && (!('stockMinimo' in d)   || d.stockMinimo is number)
-          && (!('costoUnitario' in d) || d.costoUnitario is number)
-          && (!('precioVenta' in d)   || d.precioVenta is number)
-          && (!('costoTotal' in d)    || d.costoTotal is number)
-          && (!('precioCobrado' in d) || d.precioCobrado is number)
-          && (!('monto' in d)         || d.monto is number)
-          && (!('nombre' in d)        || (d.nombre is string && d.nombre.size() <= 200))
-          && (!('notas' in d)         || (d.notas is string && d.notas.size() <= 5000))
-          && (!('media' in d)         || (d.media is list && d.media.size() <= 40));
-      }
+      allow read:   if esSuCarpeta(userId) && estaEnLaLista();
+      allow create: if esSuCarpeta(userId) && estaEnLaLista() && datosValidos();
+      allow update: if esSuCarpeta(userId) && estaEnLaLista() && datosValidos();
+      allow delete: if esSuCarpeta(userId) && estaEnLaLista();
     }
 
     // Todo lo demás queda denegado por defecto.
