@@ -291,16 +291,19 @@ export function renderProductoForm(producto = null) {
 
       <div class="field">
         <label>Foto del producto</label>
-        <div class="foto-producto-upload" id="foto-producto-zona">
+        <!-- Es un <label> a propósito: el navegador abre el selector de archivos
+             solo, sin un handler de clic. Antes era un <div> con el input adentro
+             y el clic se disparaba dos veces, cancelando el selector. -->
+        <label class="foto-producto-upload" id="foto-producto-zona" for="foto-producto-input">
           ${p.fotoUrl
-            ? `<img src="${escapeHtml(p.fotoUrl)}" id="foto-producto-preview" class="foto-producto-preview">`
+            ? `<img src="${escapeHtml(p.fotoUrl)}" id="foto-producto-preview" class="foto-producto-preview" alt="">`
             : `<div class="foto-producto-placeholder" id="foto-producto-placeholder">
                 <i class="ti ti-camera"></i>
                 <span>Subir foto</span>
                </div>`}
-          <input type="file" id="foto-producto-input" accept="image/*" style="display:none">
-          <input type="hidden" name="fotoUrl" id="foto-producto-url" value="${escapeHtml(p.fotoUrl || "")}">
-        </div>
+        </label>
+        <input type="file" id="foto-producto-input" accept="image/*" style="display:none">
+        <input type="hidden" name="fotoUrl" id="foto-producto-url" value="${escapeHtml(p.fotoUrl || "")}">
         <div id="foto-producto-progress" class="hidden" style="font-size:12px;color:var(--copper);margin-top:6px;text-align:center;">Subiendo foto...</div>
       </div>
 

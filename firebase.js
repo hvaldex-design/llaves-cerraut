@@ -7,7 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, addDoc, updateDoc, deleteDoc, setDoc, getDoc,
+  collection, doc, updateDoc, deleteDoc, setDoc, getDoc,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
@@ -71,19 +71,46 @@ export function watchCollection(uid, name, callback, orderField = "creadoEn") {
   });
 }
 
-export async function addItem(uid, name, data) {
-  return addDoc(userCollection(uid, name), {
-    ...data,
-    creadoEn: serverTimestamp()
+// ---------- Escrituras ----------
+// Con la caché offline activada, las promesas de escritura de Firestore NO se
+// resuelven hasta que el servidor confirma. Si esperáramos esa confirmación
+// para cerrar un formulario, con señal lenta la app se quedaría congelada
+// aunque el dato ya está guardado en el teléfono.
+//
+// Entonces: el cambio se aplica local al tiro (Firestore lo hace solo), la
+// interfaz sigue de inmediato, y si el servidor termina rechazando la escritura
+// se avisa por el manejador de abajo.
+
+let alFallarEscritura = () => {};
+
+export function registrarFalloDeEscritura(fn) {
+  alFallarEscritura = fn;
+}
+
+function enSegundoPlano(promesa, queSeGuardaba) {
+  promesa.catch((error) => {
+    console.error(`No se pudo guardar en ${queSeGuardaba}:`, error);
+    alFallarEscritura(error, queSeGuardaba);
   });
+  return promesa;
 }
 
-export async function updateItem(uid, name, id, data) {
-  return updateDoc(userDoc(uid, name, id), data);
+export function addItem(uid, name, data) {
+  // El id se genera en el teléfono, así que está disponible al instante
+  // (addDoc obligaría a esperar al servidor para conocerlo).
+  const ref = doc(userCollection(uid, name));
+  enSegundoPlano(setDoc(ref, { ...data, creadoEn: serverTimestamp() }), name);
+  return Promise.resolve(ref);
 }
 
-export async function deleteItem(uid, name, id) {
-  return deleteDoc(userDoc(uid, name, id));
+export function updateItem(uid, name, id, data) {
+  enSegundoPlano(updateDoc(userDoc(uid, name, id), data), name);
+  return Promise.resolve();
+}
+
+export function deleteItem(uid, name, id) {
+  enSegundoPlano(deleteDoc(userDoc(uid, name, id)), name);
+  return Promise.resolve();
 }
 
 // ---------- Documento único de configuración del taller ----------
@@ -95,18 +122,21 @@ export async function getConfigTaller(uid) {
   return snap.exists() ? snap.data() : null;
 }
 
-export async function saveConfigTaller(uid, data) {
-  return setDoc(doc(db, "usuarios", uid, "config", "taller"), data, { merge: true });
+export function saveConfigTaller(uid, data) {
+  enSegundoPlano(setDoc(doc(db, "usuarios", uid, "config", "taller"), data, { merge: true }), "config");
+  return Promise.resolve();
 }
 
 // ---------- Escrituras en lote ----------
 // Aplica varios ajustes de stock como una sola operación atómica: o entran
 // todos o no entra ninguno. Recibe [{ id, stock }, ...].
-export async function aplicarStockEnLote(uid, cambios) {
-  if (!cambios.length) return;
+export function aplicarStockEnLote(uid, cambios) {
+  if (!cambios.length) return Promise.resolve();
   const batch = writeBatch(db);
   for (const { id, stock } of cambios) {
     batch.update(userDoc(uid, "inventario", id), { stock });
   }
-  return batch.commit();
+  // Igual que las demás escrituras: se aplica local al tiro y no bloquea.
+  enSegundoPlano(batch.commit(), "inventario");
+  return Promise.resolve();
 }

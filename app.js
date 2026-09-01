@@ -1,7 +1,7 @@
 // ============================================================
 // app.js — núcleo de la aplicación
 // ============================================================
-import { auth, loginWithGoogle, logout, watchAuth, watchCollection, updateItem } from "./firebase.js";
+import { auth, loginWithGoogle, logout, watchAuth, watchCollection, updateItem, registrarFalloDeEscritura } from "./firebase.js";
 import { uploadMedia } from "./cloudinary.js";
 import { showToast, formatDate, escapeHtml, confirmar, telefonoWhatsApp } from "./helpers.js";
 import { renderDashboard, renderDashboardDetail } from "./dashboard.js";
@@ -22,7 +22,8 @@ import {
 import {
   renderInventarioView, renderProductoForm, renderProductoDetail,
   readProductoForm, saveProducto, deleteProducto, adjustStock,
-  subirFotoProducto, exportarDatosCSV, renderHistorialProducto
+  subirFotoProducto, exportarDatosCSV, renderHistorialProducto,
+  esCategoria, CATEGORIAS_CONTROL
 } from "./inventario.js";
 
 const state = {
@@ -122,6 +123,20 @@ function actualizarBandaConexion() {
 
 window.addEventListener("online", actualizarBandaConexion);
 window.addEventListener("offline", actualizarBandaConexion);
+
+// Las escrituras no bloquean la interfaz: el dato se guarda en el teléfono al
+// tiro y se sube cuando hay señal. Si el servidor termina rechazando el cambio
+// (permisos, regla de validación), hay que avisar acá, porque para ese momento
+// el formulario ya se cerró.
+registrarFalloDeEscritura((error, donde) => {
+  const permisos = error?.code === "permission-denied";
+  showToast(
+    permisos
+      ? `Sin permiso para guardar en ${donde}. Revisa las reglas de Firestore.`
+      : `No se pudo guardar en ${donde}. El cambio quedó pendiente.`,
+    "error"
+  );
+});
 
 // Separa "Llaves CerrAuto" en "Llaves" + "CerrAuto" para pintar la última
 // palabra con el color de acento.
@@ -981,7 +996,7 @@ function renderSheet() {
     const inputCatNueva = document.getElementById("input-categoria-nueva");
 
     function syncCategoriaUI() {
-      const esControl = CATEGORIAS_CONTROL.includes(selectCategoria.value);
+      const esControl = esCategoria({ categoria: selectCategoria.value }, CATEGORIAS_CONTROL);
       const esNueva = selectCategoria.value === "__nueva__";
       campoUsaPila.classList.toggle("hidden", !esControl);
       // Usar display:none directamente para evitar conflictos con clase hidden
@@ -1006,7 +1021,9 @@ function renderSheet() {
     const fotoUrl = document.getElementById("foto-producto-url");
     const fotoProgress = document.getElementById("foto-producto-progress");
 
-    fotoZona?.addEventListener("click", () => fotoInput?.click());
+    // El <label for="foto-producto-input"> abre el selector solo. No hay que
+    // agregarle un click que llame a fotoInput.click(): el evento del input
+    // burbujea de vuelta y termina cancelando el selector de archivos.
     fotoInput?.addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;

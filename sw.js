@@ -3,7 +3,7 @@
 // ============================================================
 // Sube este número cada vez que cambies archivos de la app. Al cambiar, el
 // service worker nuevo borra la caché vieja y toma el control.
-const VERSION = "cerrauto-v1";
+const VERSION = "cerrauto-v2";
 
 // El esqueleto de la app: lo que hace falta para que abra sin conexión.
 // Son rutas relativas a propósito, porque en GitHub Pages la app vive en un
@@ -97,19 +97,35 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Resto: se sirve lo guardado al tiro y se refresca en segundo plano.
+  // Tipografías e íconos de CDN: vienen con la versión en la URL y no cambian,
+  // así que se sirve lo guardado al tiro.
+  if (esCdnCacheable) {
+    event.respondWith(
+      caches.match(req).then((guardado) => guardado || fetch(req).then((res) => {
+        if (res && res.status === 200) {
+          const copia = res.clone();
+          caches.open(VERSION).then((c) => c.put(req, copia));
+        }
+        return res;
+      }))
+    );
+    return;
+  }
+
+  // Código de la app: primero la red, y la caché solo como respaldo sin señal.
+  //
+  // Antes esto servía la caché primero y refrescaba después. Con módulos eso es
+  // peligroso: al publicar un cambio quedaba una mezcla de archivos viejos y
+  // nuevos corriendo juntos, y los arreglos recién aparecían al segundo abrir.
   event.respondWith(
-    caches.match(req).then((guardado) => {
-      const enRed = fetch(req)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const copia = res.clone();
-            caches.open(VERSION).then((c) => c.put(req, copia));
-          }
-          return res;
-        })
-        .catch(() => guardado);
-      return guardado || enRed;
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const copia = res.clone();
+          caches.open(VERSION).then((c) => c.put(req, copia));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });
