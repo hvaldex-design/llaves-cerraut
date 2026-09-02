@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prueba de humo — Llaves CerrAuto</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0D0F12; color: #E4EEF5; margin: 0; padding: 28px; line-height: 1.6; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p.sub { color: #8A9AAA; font-size: 14px; margin: 0 0 22px; max-width: 60ch; }
+    #estado { font-size: 17px; font-weight: 600; padding: 14px 18px; border-radius: 10px; margin-bottom: 18px; }
+    .ok { background: #06231A; color: #00C97B; border: 1px solid #0C4630; }
+    .mal { background: #251110; color: #E2483C; border: 1px solid #4A211D; }
+    .cargando { background: #141820; color: #8A9AAA; border: 1px solid #1E2430; }
+    ul { padding-left: 20px; }
+    li { color: #E2483C; font-family: ui-monospace, monospace; font-size: 13px; margin-bottom: 6px; }
+    button { background: #00A8E8; color: #062430; border: 0; border-radius: 8px; padding: 11px 18px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Prueba de humo</h1>
+  <p class="sub">
+    Dibuja todas las pantallas de la app con datos de mentira y avisa si alguna
+    revienta. Sirve para pillar errores que solo aparecen al ejecutar, como una
+    variable borrada que quedó usada en una plantilla.
+  </p>
+
+  <div id="estado" class="cargando">Corriendo…</div>
+  <ul id="fallos"></ul>
+  <button id="repetir">Correr de nuevo</button>
+
+  <script src="../config.js"></script>
+  <script type="module">
+    const estado = document.getElementById("estado");
+    const lista = document.getElementById("fallos");
+
+    async function correr() {
+      estado.className = "cargando";
+      estado.textContent = "Corriendo…";
+      lista.innerHTML = "";
+      try {
+        const { correrHumo } = await import(`./humo-render.js?v=${Date.now()}`);
+        const { total, fallos } = await correrHumo();
+        if (fallos.length) {
+          estado.className = "mal";
+          estado.textContent = `${fallos.length} de ${total} pantallas fallaron`;
+          lista.innerHTML = fallos.map((f) => `<li>${f}</li>`).join("");
+        } else {
+          estado.className = "ok";
+          estado.textContent = `Las ${total} pantallas se dibujan bien`;
+        }
+      } catch (e) {
+        estado.className = "mal";
+        estado.textContent = "No se pudo correr la prueba";
+        lista.innerHTML = `<li>${e.message}</li>`;
+      }
+    }
+
+    document.getElementById("repetir").addEventListener("click", correr);
+    correr();
+  </script>
+</body>
+</html>

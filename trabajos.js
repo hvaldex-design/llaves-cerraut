@@ -381,8 +381,9 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
 
       <div class="field">
         <label>Foto / Video</label>
+        <!-- Las miniaturas las pinta renderMediaTiles() en app.js desde la copia
+             local de media, para poder agregar y quitar antes de guardar. -->
         <div class="media-grid">
-          ${mediaHtml}
           <label class="media-upload-tile" id="media-upload-tile">
             <i class="ti ti-camera-plus"></i>
             <span>Agregar</span>
