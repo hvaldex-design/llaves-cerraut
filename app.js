@@ -662,8 +662,21 @@ function renderSheet() {
           card.classList.add("selected");
           card.insertAdjacentHTML("beforeend", `<i class="ti ti-check inv-selector-check"></i>`);
           if (inputEspadinId) inputEspadinId.value = card.dataset.espId;
+          // Stock y catálogo son excluyentes: elegir uno limpia el otro para
+          // que el espadín no se cobre dos veces.
+          if (selectEspadinFallback) selectEspadinFallback.value = "";
         }
         recalcularCosto();
+      });
+    });
+
+    // Elegir del catálogo deselecciona la tarjeta del stock
+    selectEspadinFallback?.addEventListener("change", () => {
+      if (!selectEspadinFallback.value) return;
+      if (inputEspadinId) inputEspadinId.value = "";
+      content.querySelectorAll("[data-esp-id]").forEach(c => {
+        c.classList.remove("selected");
+        c.querySelector(".inv-selector-check")?.remove();
       });
     });
 

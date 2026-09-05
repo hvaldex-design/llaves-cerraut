@@ -380,25 +380,31 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
       <div class="field">
         <label>Espadín <span style="color:var(--text-muted)">(opcional — suma ${formatCLP(getPrecioEspadin())} automático)</span></label>
         <input type="hidden" name="espadinId" id="input-espadin-id" value="${escapeHtml(espadinIdActual)}">
+        <!-- El stock y el catálogo conviven a propósito. Antes el catálogo solo
+             aparecía si NO había ningún espadín en el inventario, así que al
+             cargar el primero se perdía la forma de anotar cualquier otro
+             código y el trabajo quedaba sin espadín. -->
         ${espadinesInv.length ? `
           <div class="inv-selector-search-box">
             <i class="ti ti-search"></i>
-            <input type="search" id="buscar-espadin" placeholder="Buscar espadín..." autocomplete="off">
+            <input type="search" id="buscar-espadin" placeholder="Buscar espadín en tu stock..." autocomplete="off">
           </div>
           <div class="inv-selector-grid-compact" id="grid-espadines">
             ${espadinesCardsHtml}
           </div>
-        ` : `
-          <div class="inv-selector-search-box">
-            <i class="ti ti-search"></i>
-            <input type="search" id="buscar-espadin-catalogo" placeholder="Buscar espadín (TOY43, HU66...)" autocomplete="off">
-          </div>
-          <select name="espadinCodigo" id="select-espadin-fallback" size="6" class="select-lista">
-            <option value="">Sin espadín</option>
-            ${opcionesEspadin}
-          </select>
-          <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Agrega espadines al inventario para verlos con foto aquí.</p>
-        `}
+          <div class="separador-o"><span>o del catálogo</span></div>
+        ` : ""}
+        <div class="inv-selector-search-box">
+          <i class="ti ti-search"></i>
+          <input type="search" id="buscar-espadin-catalogo" placeholder="Buscar en el catálogo (TOY43, VA2, HU66...)" autocomplete="off">
+        </div>
+        <select name="espadinCodigo" id="select-espadin-fallback" size="6" class="select-lista">
+          <option value="">Sin espadín</option>
+          ${opcionesEspadin}
+        </select>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+          El del stock descuenta una unidad y suma su costo. El del catálogo solo se anota y suma ${formatCLP(getPrecioEspadin())}.
+        </p>
       </div>
 
       <div class="field">
