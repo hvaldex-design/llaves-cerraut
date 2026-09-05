@@ -125,27 +125,59 @@ export function renderTrabajosView(state) {
  *   espadín del catálogo           → el valor fijo configurado en el taller
  *   pila CR2032                    → solo si el control la usa y el servicio no está exento
  */
-export function calcularCostoDeTrabajo(data, inventario = []) {
+export function detalleDeCostos(data, inventario = []) {
   const buscar = (id) => (id ? inventario.find(p => p.id === id) : null);
   const costoDe = (prod) => Number(prod?.costoUnitario) || 0;
 
   const control = buscar(data.controlId);
+  const chip = buscar(data.transponderInvId);
+  const llaveVirgen = buscar(data.llaveVirgenId);
   const espadin = buscar(espadinIdDe(data, inventario));
 
-  let total = 0;
-  total += costoDe(control);
-  total += costoDe(buscar(data.transponderInvId));
-  total += costoDe(buscar(data.llaveVirgenId));
+  const lineas = [];
+  const agregar = (l) => lineas.push(l);
 
-  if (espadin) total += costoDe(espadin);
-  else if (data.espadinCodigo) total += getPrecioEspadin();
+  if (control) agregar({
+    rol: "Control", nombre: control.nombre, detalle: control.compatibilidad || "",
+    monto: costoDe(control), fotoUrl: control.fotoUrl, icono: "device-remote", delStock: true
+  });
 
-  if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) {
-    total += getPrecioPila();
-  }
+  if (chip) agregar({
+    rol: "Chip", nombre: chip.nombre, detalle: chip.compatibilidad || "",
+    monto: costoDe(chip), fotoUrl: chip.fotoUrl, icono: "key-filled", delStock: true
+  });
 
-  total += Number(data.pincode) || 0;
-  return total;
+  if (llaveVirgen) agregar({
+    rol: "Llave virgen", nombre: llaveVirgen.nombre, detalle: llaveVirgen.compatibilidad || "",
+    monto: costoDe(llaveVirgen), fotoUrl: llaveVirgen.fotoUrl, icono: "key", delStock: true
+  });
+
+  if (espadin) agregar({
+    rol: "Espadín", nombre: espadin.nombre, detalle: espadin.compatibilidad || "",
+    monto: costoDe(espadin), fotoUrl: espadin.fotoUrl, icono: "key", delStock: true
+  });
+  else if (data.espadinCodigo) agregar({
+    rol: "Espadín", nombre: data.espadinCodigo, detalle: "Del catálogo",
+    monto: getPrecioEspadin(), icono: "key", delStock: false
+  });
+
+  if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) agregar({
+    rol: "Pila", nombre: "Pila CR2032", detalle: "El control la usa",
+    monto: getPrecioPila(), icono: "battery-2", delStock: true
+  });
+
+  if (Number(data.pincode) > 0) agregar({
+    rol: "Pincode", nombre: "Pincode comprado", detalle: "Comprado para este trabajo",
+    monto: Number(data.pincode), icono: "lock-code", delStock: false
+  });
+
+  return { lineas, total: lineas.reduce((s, l) => s + l.monto, 0) };
+}
+
+// Total del trabajo. Sale del mismo detalle que se muestra en pantalla, así que
+// la lista de insumos y el costo total no pueden dar números distintos.
+export function calcularCostoDeTrabajo(data, inventario = []) {
+  return detalleDeCostos(data, inventario).total;
 }
 
 export function renderTrabajoForm(trabajo = null, inventario = []) {
@@ -424,49 +456,53 @@ export function renderTrabajoDetail(trabajo, inventario = []) {
     ? Math.round(ganancia / Number(t.precioCobrado) * 100)
     : null;
 
-  // ── Insumos usados: resolvemos los ids guardados contra el inventario ──
-  const buscar = (id) => (id ? inventario.find(p => p.id === id) : null);
-  const espadinId = t.espadinId
-    || (inventario.some(p => p.id === t.espadinCodigo) ? t.espadinCodigo : "");
-  const codigoCatalogo = espadinId ? "" : (t.espadinCodigo || "");
+  // ── Insumos usados ──
+  // Se listan TODAS las líneas de gasto con su monto, no solo las que salen del
+  // stock, para que el detalle sume a la vista el costo total de la llave.
+  const { lineas, total: sumaInsumos } = detalleDeCostos(t, inventario);
 
-  const insumos = [
-    { rol: "Control",       prod: buscar(t.controlId),         icono: "device-remote" },
-    { rol: "Chip",          prod: buscar(t.transponderInvId),  icono: "key-filled" },
-    { rol: "Espadín",       prod: buscar(espadinId),           icono: "key" },
-    { rol: "Llave virgen",  prod: buscar(t.llaveVirgenId),     icono: "key" }
-  ].filter(x => x.prod);
-
-  const insumosHtml = insumos.map(({ rol, prod, icono }) => `
+  const insumosHtml = lineas.map((l) => `
     <div class="insumo-row">
       <div class="insumo-img">
-        ${prod.fotoUrl
-          ? `<img src="${escapeHtml(prod.fotoUrl)}" alt="">`
-          : `<i class="ti ti-${icono}"></i>`}
+        ${l.fotoUrl
+          ? `<img src="${escapeHtml(l.fotoUrl)}" alt="">`
+          : `<i class="ti ti-${l.icono}"></i>`}
       </div>
       <div class="insumo-info">
-        <div class="insumo-nombre">${escapeHtml(prod.nombre)}</div>
-        <div class="insumo-rol">${rol}${prod.compatibilidad ? " · " + escapeHtml(prod.compatibilidad) : ""}</div>
+        <div class="insumo-nombre">${escapeHtml(l.nombre)}</div>
+        <div class="insumo-rol">
+          ${escapeHtml(l.rol)}${l.detalle ? " · " + escapeHtml(l.detalle) : ""}
+          ${l.delStock ? "" : `<span class="insumo-nostock">no descuenta stock</span>`}
+        </div>
       </div>
-      <span class="insumo-costo mono">${formatCLP(prod.costoUnitario)}</span>
+      <span class="insumo-costo mono">${formatCLP(l.monto)}</span>
     </div>
   `).join("");
 
-  const insumosExtra = [];
-  if (codigoCatalogo) insumosExtra.push(`Espadín <b class="mono">${escapeHtml(codigoCatalogo)}</b> (del catálogo, sin descuento de stock)`);
-  if (Number(t.pincode) > 0) insumosExtra.push(`Pincode comprado: <b class="mono">${formatCLP(t.pincode)}</b>`);
-  const control = buscar(t.controlId);
-  if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(t.tipoServicio)) {
-    insumosExtra.push(`Pila CR2032 (${formatCLP(getPrecioPila())})`);
-  }
+  // Si el costo guardado no calza con la suma, es porque se ajustó a mano.
+  // Se muestra la diferencia en vez de esconderla.
+  const guardado = Number(t.costoTotal) || 0;
+  const ajuste = guardado - sumaInsumos;
 
-  const bloqueInsumos = (insumosHtml || insumosExtra.length) ? `
+  const bloqueInsumos = lineas.length ? `
     <div class="detail-section-title">Insumos usados</div>
     ${insumosHtml}
-    ${insumosExtra.length ? `<ul class="insumo-extras">${insumosExtra.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+    <div class="insumo-total">
+      <span>Suma de insumos</span>
+      <span class="mono">${formatCLP(sumaInsumos)}</span>
+    </div>
+    ${ajuste !== 0 ? `
+      <div class="insumo-ajuste">
+        <span><i class="ti ti-pencil"></i> Ajuste manual</span>
+        <span class="mono">${ajuste > 0 ? "+" : "−"}${formatCLP(Math.abs(ajuste))}</span>
+      </div>
+      <div class="insumo-total destacado">
+        <span>Costo guardado</span>
+        <span class="mono">${formatCLP(guardado)}</span>
+      </div>` : ""}
   ` : `
     <div class="detail-section-title">Insumos usados</div>
-    <p class="insumo-vacio">No se registraron insumos del inventario en este trabajo.</p>
+    <p class="insumo-vacio">No se registraron insumos en este trabajo.</p>
   `;
 
   const mediaHtml = media.map((m, i) => `

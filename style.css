@@ -2410,3 +2410,62 @@ button.mini-card:hover, button.mini-card:focus-visible { border-color: var(--cop
   margin: 8px 0 0;
 }
 .aviso-sin-costo i { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+
+/* ============================================================
+   DETALLE DE COSTOS EN INSUMOS USADOS
+   ============================================================ */
+.insumo-nostock {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.insumo-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 2px 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-strong);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.insumo-total .mono {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.insumo-total.destacado {
+  border-top: none;
+  padding-top: 6px;
+}
+.insumo-total.destacado .mono { color: var(--copper); }
+
+.insumo-ajuste {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 2px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.insumo-ajuste .mono { font-family: var(--font-mono); }
+.insumo-ajuste i { font-size: 13px; vertical-align: -1px; }
+
+/* La fila del insumo puede llevar la etiqueta "no descuenta stock" en una
+   segunda línea; antes .insumo-rol la recortaba con puntos suspensivos. */
+.insumo-rol {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.45;
+}
+.insumo-nostock { margin-left: 0; margin-top: 3px; }
