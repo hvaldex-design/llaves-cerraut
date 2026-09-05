@@ -122,6 +122,14 @@ export function productosParaReponer(inventario, movimientos) {
     });
 }
 
+// Un smart key no tiene paletón que cortar, así que no lleva espadín.
+// Se reconocen por el prefijo XS (XSTO01EN, XSKF20EN...) o porque el nombre
+// dice "SMART KEY" — en el inventario hay controles que solo traen eso.
+export function esSmartKey(producto) {
+  const n = String(producto?.nombre || "").trim().toUpperCase();
+  return n.startsWith("XS") || n.includes("SMART KEY");
+}
+
 function iconoDe(p) {
   if (esCategoria(p, CATEGORIAS_CONTROL)) return "device-remote";
   if (esCategoria(p, CATEGORIA_CHIP)) return "key-filled";

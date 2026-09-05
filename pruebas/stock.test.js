@@ -118,53 +118,51 @@ chequear("escrituras al cambiar de control (2 productos)", e, 2);
 
 
 // ============================================================
-// Costo del trabajo: control y pila no se pueden perder
 // ============================================================
-// El caso real que lo destapó: RAV4 2014 con control de $5.900 (usa pila),
-// chip de $2.000 y espadín del catálogo. El total salía $2.300 — solo chip
-// más espadín — porque el costo del control vivía en una variable del
-// formulario que arrancaba en cero al abrir un trabajo ya guardado.
+// Costo del trabajo
+// ============================================================
+// El espadín se cobra plano cuando la llave lleva paletón: control que no sea
+// smart key, o chip / llave virgen sin control. Un XS no lleva paletón.
 console.log("\n═══ Costo del trabajo ═══\n");
 {
-  const { calcularCostoDeTrabajo } = await import("./trabajos.js");
+  const { calcularCostoDeTrabajo, detalleDeCostos } = await import("./trabajos.js");
   bd.inventario.clear();
   for (const p of [
-    { id:"ctrl", nombre:"XKTO21EN (2 boton)", categoria:"Control Xhorse", stock:4, usaPila:true, costoUnitario:5900 },
-    { id:"chip", nombre:"Super chip",         categoria:"CHIP",           stock:10, costoUnitario:2000 },
-    { id:"esp",  nombre:"TOY43R",             categoria:"Espadín",        stock:9,  costoUnitario:1200 },
-    { id:"sinC", nombre:"Control sin costo",  categoria:"Control Xhorse", stock:2, usaPila:true, costoUnitario:0 }
+    { id:"ctrl",  nombre:"XKTO21EN (2 boton)",  categoria:"Control Xhorse", stock:4,  usaPila:true, costoUnitario:5900 },
+    { id:"smart", nombre:"XSTO01EN — SMART KEY",categoria:"Control Xhorse", stock:2,  usaPila:true, costoUnitario:14000 },
+    { id:"smart2",nombre:"SMART KEY XHORSE",    categoria:"Control Xhorse", stock:2,  usaPila:true, costoUnitario:15000 },
+    { id:"kd",    nombre:"KD-B19-4",            categoria:"Control KD",     stock:3,  usaPila:true, costoUnitario:4500 },
+    { id:"chip",  nombre:"Super chip",          categoria:"CHIP",           stock:10, costoUnitario:2000 },
+    { id:"lv",    nombre:"Llave virgen TOY",    categoria:"Llave virgen",   stock:6,  costoUnitario:2500 },
+    { id:"esp",   nombre:"TOY43R",              categoria:"Espadín",        stock:9,  costoUnitario:800 }
   ]) bd.inventario.set(p.id, p);
   const inventario = [...bd.inventario.values()];
+  const vacio = { controlId:"", transponderInvId:"", espadinCodigo:"", espadinId:"", llaveVirgenId:"", pincode:0, tipoServicio:"Duplicado" };
+  const costo = (d) => calcularCostoDeTrabajo({ ...vacio, ...d }, inventario);
+  const hayEspadin = (d) => detalleDeCostos({ ...vacio, ...d }, inventario).lineas.some(l => l.rol === "Espadín");
 
-  const caso = {
-    controlId:"ctrl", transponderInvId:"chip", espadinCodigo:"TOY43",
-    espadinId:"", llaveVirgenId:"", pincode:0, tipoServicio:"Duplicado"
-  };
-  // 5900 control + 2000 chip + 300 espadín de catálogo + 1000 pila
-  chequear("control + chip + espadín catálogo + pila", calcularCostoDeTrabajo(caso, inventario), 9200);
+  chequear("control Xhorse: control + pila + espadín", costo({ controlId:"ctrl" }), 5900 + 1000 + 400);
+  chequear("control KD: control + pila + espadín",     costo({ controlId:"kd" }),   4500 + 1000 + 400);
 
-  // El espadín del inventario suma su costo real, no el fijo de $300
-  chequear("espadín del inventario usa su costo",
-    calcularCostoDeTrabajo({ ...caso, espadinCodigo:"", espadinId:"esp" }, inventario), 5900 + 2000 + 1200 + 1000);
+  chequear("smart key XS no cobra espadín",         costo({ controlId:"smart" }),  14000 + 1000);
+  chequear("smart key por nombre no cobra espadín", costo({ controlId:"smart2" }), 15000 + 1000);
+  chequear("smart key: no aparece la línea",        hayEspadin({ controlId:"smart" }), false);
 
-  // "Llave simple" y "Apertura" no suman la pila
-  chequear("servicio sin pila no la suma",
-    calcularCostoDeTrabajo({ ...caso, tipoServicio:"Apertura" }, inventario), 9200 - 1000);
+  chequear("smart key con chip sigue sin espadín",
+    costo({ controlId:"smart", transponderInvId:"chip" }), 14000 + 1000 + 2000);
 
-  // Formato antiguo: el id del espadín venía dentro de espadinCodigo
-  chequear("espadín en formato antiguo usa su costo",
-    calcularCostoDeTrabajo({ ...caso, espadinCodigo:"esp" }, inventario), 5900 + 2000 + 1200 + 1000);
+  chequear("solo chip cobra espadín",         costo({ transponderInvId:"chip" }), 2000 + 400);
+  chequear("solo llave virgen cobra espadín", costo({ llaveVirgenId:"lv" }),      2500 + 400);
 
-  // El pincode comprado se suma tal cual
-  chequear("pincode se suma", calcularCostoDeTrabajo({ ...caso, pincode:15000 }, inventario), 9200 + 15000);
+  chequear("control + chip + llave: un solo espadín",
+    costo({ controlId:"ctrl", transponderInvId:"chip", llaveVirgenId:"lv" }), 5900 + 2000 + 2500 + 1000 + 400);
 
-  // Un control sin costo registrado no rompe el cálculo: aporta 0 pero la pila sigue
-  chequear("control sin costo suma solo la pila",
-    calcularCostoDeTrabajo({ ...caso, controlId:"sinC" }, inventario), 2000 + 300 + 1000);
+  chequear("espadín del catálogo", costo({ controlId:"ctrl", espadinCodigo:"TOY43" }), 5900 + 1000 + 400);
+  chequear("espadín del stock",    costo({ controlId:"ctrl", espadinId:"esp" }),       5900 + 1000 + 400);
 
-  // Sin ningún insumo, el costo es cero
-  chequear("trabajo sin insumos",
-    calcularCostoDeTrabajo({ controlId:"", transponderInvId:"", espadinCodigo:"", espadinId:"", llaveVirgenId:"", pincode:0, tipoServicio:"Duplicado" }, inventario), 0);
+  chequear("trabajo vacío", costo({}), 0);
+  chequear("Apertura no suma pila", costo({ controlId:"ctrl", tipoServicio:"Apertura" }), 5900 + 400);
+  chequear("pincode se suma", costo({ controlId:"ctrl", pincode:15000 }), 5900 + 1000 + 400 + 15000);
 }
 console.log(fallos === 0 ? "\n✅ TODAS LAS PRUEBAS PASARON\n" : `\n❌ ${fallos} PRUEBAS FALLARON\n`);
 process.exit(fallos ? 1 : 0);

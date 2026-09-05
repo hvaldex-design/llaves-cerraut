@@ -1,2 +1,2 @@
 export function getPrecioPila() { return 1000; }
-export function getPrecioEspadin() { return 300; }
+export function getPrecioEspadin() { return 400; }

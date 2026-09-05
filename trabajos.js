@@ -5,7 +5,7 @@ import { addItem, updateItem, deleteItem, aplicarStockEnLote } from "./firebase.
 import { uploadMedia, borrarMedia } from "./cloudinary.js";
 import { formatCLP, formatDate, escapeHtml, showToast, todayInputValue } from "./helpers.js";
 import {
-  registrarMovimiento, esCategoria,
+  registrarMovimiento, esCategoria, esSmartKey,
   CATEGORIAS_CONTROL, CATEGORIAS_ESPADIN, CATEGORIAS_LLAVE_VIRGEN, CATEGORIA_CHIP
 } from "./inventario.js";
 import { getPrecioPila, getPrecioEspadin } from "./taller.js";
@@ -121,9 +121,10 @@ export function renderTrabajosView(state) {
  * le borraba al total el control y la pila.
  *
  *   control + chip + llave virgen  → costo unitario del producto
- *   espadín del inventario         → su costo unitario
- *   espadín del catálogo           → el valor fijo configurado en el taller
+ *   espadín                        → valor plano del taller, cuando el trabajo
+ *                                    lleva una llave con paletón (ver abajo)
  *   pila CR2032                    → solo si el control la usa y el servicio no está exento
+ *   pincode                        → lo que se pagó por él
  */
 export function detalleDeCostos(data, inventario = []) {
   const buscar = (id) => (id ? inventario.find(p => p.id === id) : null);
@@ -152,14 +153,26 @@ export function detalleDeCostos(data, inventario = []) {
     monto: costoDe(llaveVirgen), fotoUrl: llaveVirgen.fotoUrl, icono: "key", delStock: true
   });
 
-  if (espadin) agregar({
-    rol: "Espadín", nombre: espadin.nombre, detalle: espadin.compatibilidad || "",
-    monto: costoDe(espadin), fotoUrl: espadin.fotoUrl, icono: "key", delStock: true
-  });
-  else if (data.espadinCodigo) agregar({
-    rol: "Espadín", nombre: data.espadinCodigo, detalle: "Del catálogo",
-    monto: getPrecioEspadin(), icono: "key", delStock: false
-  });
+  // ── Espadín ──
+  // Se cobra plano (el corte, no el fierro) cuando el trabajo lleva una llave
+  // con paletón. Un smart key no tiene paletón, así que no lleva espadín — y
+  // eso manda por sobre el chip, porque el chip va dentro del propio smart key.
+  const llevaEspadin = control
+    ? !esSmartKey(control)
+    : !!(llaveVirgen || chip || espadin || data.espadinCodigo);
+
+  if (llevaEspadin) {
+    const nombre = espadin?.nombre || data.espadinCodigo || "Espadín";
+    const detalle = espadin
+      ? (espadin.compatibilidad || "Del stock")
+      : (data.espadinCodigo ? "Del catálogo" : "Corte de espadín");
+    agregar({
+      rol: "Espadín", nombre, detalle,
+      monto: getPrecioEspadin(),
+      fotoUrl: espadin?.fotoUrl, icono: "key",
+      delStock: !!espadin
+    });
+  }
 
   if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) agregar({
     rol: "Pila", nombre: "Pila CR2032", detalle: "El control la usa",

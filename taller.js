@@ -18,7 +18,7 @@ export const CONFIG_POR_DEFECTO = {
   nombre: "Llaves CerrAuto",
   logoUrl: null,
   precioPila: 1000,      // pila CR2032
-  precioEspadin: 300     // corte de espadín
+  precioEspadin: 400     // corte de espadín
 };
 
 let cache = { ...CONFIG_POR_DEFECTO };
