@@ -139,85 +139,79 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
     || (inventario.some(p => p.id === t.espadinCodigo) ? t.espadinCodigo : "");
   const espadinCodigoActual = espadinIdActual ? "" : (t.espadinCodigo || "");
 
-  // Cards de controles con foto para el selector visual
-  const controlesCardsHtml = controles.map(c => `
-    <div class="inv-selector-card-compact ${t.controlId === c.id ? "selected" : ""}"
-         data-ctrl-id="${c.id}"
+  // Tarjeta de un insumo del stock, para los cuatro selectores.
+  //
+  // Muestra el stock y avisa cuando el producto no tiene costo registrado: un
+  // control en $0 hace que el costo del trabajo salga sin sumarle nada, y antes
+  // eso pasaba callado (se veía "$0" y nada más).
+  function tarjetaInsumo({ prod, seleccionado, atributos, icono, imgChica = false }) {
+    const stock = Number(prod.stock) || 0;
+    const costo = Number(prod.costoUnitario) || 0;
+    const sinStock = stock <= 0;
+    return `
+    <div class="inv-selector-card-compact ${seleccionado ? "selected" : ""} ${sinStock ? "sin-stock" : ""}"
+         ${atributos}
+         data-search="${escapeHtml((prod.nombre + " " + (prod.compatibilidad || "")).toLowerCase())}">
+      <div class="inv-selector-img${imgChica ? "-sm" : ""}">
+        ${prod.fotoUrl
+          ? `<img src="${escapeHtml(prod.fotoUrl)}" alt="">`
+          : `<i class="ti ti-${icono}"></i>`}
+      </div>
+      <div class="inv-selector-info">
+        <div class="inv-selector-name">${escapeHtml(prod.nombre)}</div>
+        <div class="inv-selector-compat">${escapeHtml(prod.compatibilidad || "")}</div>
+        <div class="inv-selector-linea">
+          <span class="inv-selector-price ${costo ? "" : "sin-costo"}">
+            ${costo ? formatCLP(costo) : `<i class="ti ti-alert-triangle"></i> Sin costo`}
+          </span>
+          <span class="inv-selector-stock ${sinStock ? "cero" : ""}">
+            ${sinStock ? "Sin stock" : `Quedan ${stock}`}
+          </span>
+        </div>
+      </div>
+      ${seleccionado ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
+    </div>`;
+  }
+
+  const controlesCardsHtml = controles.map(c => tarjetaInsumo({
+    prod: c,
+    seleccionado: t.controlId === c.id,
+    icono: "device-remote",
+    atributos: `data-ctrl-id="${c.id}"
          data-ctrl-costo="${c.costoUnitario || 0}"
          data-ctrl-pila="${c.usaPila === false ? "0" : "1"}"
-         data-ctrl-search="${escapeHtml((c.nombre + " " + (c.compatibilidad||"")).toLowerCase())}">
-      <div class="inv-selector-img">
-        ${c.fotoUrl
-          ? `<img src="${escapeHtml(c.fotoUrl)}" alt="">`
-          : `<i class="ti ti-device-remote"></i>`}
-      </div>
-      <div class="inv-selector-info">
-        <div class="inv-selector-name">${escapeHtml(c.nombre)}</div>
-        <div class="inv-selector-compat">${escapeHtml(c.compatibilidad || "")}</div>
-        <div class="inv-selector-price">${formatCLP(c.costoUnitario)}</div>
-      </div>
-      ${t.controlId === c.id ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
-    </div>
-  `).join("");
+         data-ctrl-search="${escapeHtml((c.nombre + " " + (c.compatibilidad || "")).toLowerCase())}"`
+  })).join("");
 
-  // Cards de transponders/chips con foto
-  const transpondersCardsHtml = transpondersInv.map(tr => `
-    <div class="inv-selector-card-compact ${t.transponderInvId === tr.id ? "selected" : ""}"
-         data-tr-id="${tr.id}"
+  const transpondersCardsHtml = transpondersInv.map(tr => tarjetaInsumo({
+    prod: tr,
+    seleccionado: t.transponderInvId === tr.id,
+    icono: "key-filled",
+    imgChica: true,
+    atributos: `data-tr-id="${tr.id}"
          data-tr-costo="${tr.costoUnitario || 0}"
-         data-tr-search="${escapeHtml((tr.nombre + " " + (tr.compatibilidad||"")).toLowerCase())}">
-      <div class="inv-selector-img-sm">
-        ${tr.fotoUrl
-          ? `<img src="${escapeHtml(tr.fotoUrl)}" alt="">`
-          : `<i class="ti ti-key-filled"></i>`}
-      </div>
-      <div class="inv-selector-info">
-        <div class="inv-selector-name">${escapeHtml(tr.nombre)}</div>
-        <div class="inv-selector-compat">${escapeHtml(tr.compatibilidad || "")}</div>
-        <div class="inv-selector-price">${formatCLP(tr.costoUnitario)}</div>
-      </div>
-      ${t.transponderInvId === tr.id ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
-    </div>
-  `).join("");
+         data-tr-search="${escapeHtml((tr.nombre + " " + (tr.compatibilidad || "")).toLowerCase())}"`
+  })).join("");
 
-  // Cards de llaves vírgenes (aparecen cuando servicio = Llave simple)
-  const llavesVirgenesCardsHtml = llavesVirgenes.map(lv => `
-    <div class="inv-selector-card-compact ${t.llaveVirgenId === lv.id ? "selected" : ""}"
-         data-lv-id="${lv.id}"
+  // Llaves vírgenes: aparecen cuando el servicio es "Llave simple"
+  const llavesVirgenesCardsHtml = llavesVirgenes.map(lv => tarjetaInsumo({
+    prod: lv,
+    seleccionado: t.llaveVirgenId === lv.id,
+    icono: "key",
+    imgChica: true,
+    atributos: `data-lv-id="${lv.id}"
          data-lv-costo="${lv.costoUnitario || 0}"
-         data-lv-search="${escapeHtml((lv.nombre + " " + (lv.compatibilidad||"")).toLowerCase())}">
-      <div class="inv-selector-img-sm">
-        ${lv.fotoUrl
-          ? `<img src="${escapeHtml(lv.fotoUrl)}" alt="">`
-          : `<i class="ti ti-key"></i>`}
-      </div>
-      <div class="inv-selector-info">
-        <div class="inv-selector-name">${escapeHtml(lv.nombre)}</div>
-        <div class="inv-selector-compat">${escapeHtml(lv.compatibilidad || "")}</div>
-        <div class="inv-selector-price">${formatCLP(lv.costoUnitario)}</div>
-      </div>
-      ${t.llaveVirgenId === lv.id ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
-    </div>
-  `).join("");
+         data-lv-search="${escapeHtml((lv.nombre + " " + (lv.compatibilidad || "")).toLowerCase())}"`
+  })).join("");
 
-  // Cards de espadines con foto
-  const espadinesCardsHtml = espadinesInv.map(e => `
-    <div class="inv-selector-card-compact ${espadinIdActual === e.id ? "selected" : ""}"
-         data-esp-id="${e.id}"
+  const espadinesCardsHtml = espadinesInv.map(e => tarjetaInsumo({
+    prod: e,
+    seleccionado: espadinIdActual === e.id,
+    icono: "key",
+    atributos: `data-esp-id="${e.id}"
          data-esp-costo="${e.costoUnitario || 0}"
-         data-esp-search="${escapeHtml((e.nombre + " " + (e.compatibilidad||"")).toLowerCase())}">
-      <div class="inv-selector-img">
-        ${e.fotoUrl
-          ? `<img src="${escapeHtml(e.fotoUrl)}" alt="">`
-          : `<i class="ti ti-key"></i>`}
-      </div>
-      <div class="inv-selector-info">
-        <div class="inv-selector-name">${escapeHtml(e.nombre)}</div>
-        <div class="inv-selector-compat">${escapeHtml(e.compatibilidad || "")}</div>
-      </div>
-      ${espadinIdActual === e.id ? `<i class="ti ti-check inv-selector-check"></i>` : ""}
-    </div>
-  `).join("");
+         data-esp-search="${escapeHtml((e.nombre + " " + (e.compatibilidad || "")).toLowerCase())}"`
+  })).join("");
 
   // Fallback espadines del catálogo si no hay espadines en inventario
   const opcionesEspadin = ESPADINES_CATALOGO.map((e) =>
@@ -362,6 +356,7 @@ export function renderTrabajoForm(trabajo = null, inventario = []) {
         <label>Costo total de la llave</label>
         <input type="number" name="costoTotal" id="input-costo-total" placeholder="0" value="${t.costoTotal ?? ""}" min="0" step="1">
         <p style="font-size:12px; color:var(--text-muted); margin: 6px 0 0;">Se calcula solo (control + pila + espadín + pincode). Puedes ajustarlo a mano si es necesario.</p>
+        <p class="aviso-sin-costo hidden" id="aviso-sin-costo"></p>
       </div>
 
       <div class="field">

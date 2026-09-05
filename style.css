@@ -2361,3 +2361,52 @@ button.mini-card:hover, button.mini-card:focus-visible { border-color: var(--cop
 .spark-bar { background: var(--spark-apagada); }
 :root      { --spark-apagada: #33475A; }
 [data-tema="light"] { --spark-apagada: #B9C9DA; }
+
+/* ============================================================
+   AVISOS DE STOCK Y COSTO EN LOS SELECTORES DE INSUMOS
+   ============================================================ */
+.inv-selector-linea {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.inv-selector-price.sin-costo {
+  color: var(--warn);
+  font-weight: 600;
+}
+.inv-selector-price.sin-costo i { font-size: 12px; vertical-align: -1px; }
+
+.inv-selector-stock {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.inv-selector-stock.cero {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.inv-selector-card-compact.sin-stock .inv-selector-img,
+.inv-selector-card-compact.sin-stock .inv-selector-img-sm {
+  opacity: 0.45;
+}
+
+.aviso-sin-costo {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  margin: 8px 0 0;
+}
+.aviso-sin-costo i { flex-shrink: 0; font-size: 14px; margin-top: 1px; }

@@ -619,6 +619,29 @@ function renderSheet() {
         pincode: inputPincode?.value
       });
       if (inputCostoTotal) inputCostoTotal.value = base + lvCosto + trCosto + espCosto;
+
+      // Si un insumo elegido no tiene costo registrado en el stock, el total
+      // sale sin sumarle nada. Antes eso pasaba callado y el trabajo quedaba
+      // con un costo más bajo que el real.
+      const aviso = document.getElementById("aviso-sin-costo");
+      if (!aviso) return;
+
+      const nombreDe = (tarjeta) => tarjeta?.querySelector(".inv-selector-name")?.textContent?.trim();
+      const ctrlCard = inputControlId?.value
+        ? content.querySelector(`[data-ctrl-id="${inputControlId.value}"]`)
+        : null;
+
+      const sinCosto = [
+        inputControlId?.value      && !ctrlCosto ? nombreDe(ctrlCard) : null,
+        inputTransponderId?.value  && !trCosto   ? nombreDe(trCard)   : null,
+        inputLlaveVirgenId?.value  && !lvCosto   ? nombreDe(lvCard)   : null,
+        inputEspadinId?.value      && !espCosto  ? nombreDe(espCard)  : null
+      ].filter(Boolean);
+
+      aviso.classList.toggle("hidden", !sinCosto.length);
+      aviso.innerHTML = sinCosto.length
+        ? `<i class="ti ti-alert-triangle"></i> ${escapeHtml(sinCosto.join(", "))} no tiene costo registrado en el stock, así que no suma nada al total. Edítalo en Stock para que el cálculo salga bien.`
+        : "";
     }
 
     // Click en card de control
