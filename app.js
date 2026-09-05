@@ -14,7 +14,7 @@ import {
 import {
   renderTrabajosView, renderTrabajoForm, renderTrabajoDetail,
   readTrabajoForm, saveTrabajo, deleteTrabajo, addMediaToTrabajo,
-  removeMediaFromTrabajo, calcularCostoAutomatico, generarMensajeWhatsApp
+  removeMediaFromTrabajo, calcularCostoDeTrabajo, generarMensajeWhatsApp
 } from "./trabajos.js";
 import {
   renderPagosView, renderPagoForm, renderPagoDetail, readPagoForm, savePago, deletePago
@@ -568,7 +568,6 @@ function renderSheet() {
     const inputPincode = document.getElementById("input-pincode");
     const inputCostoTotal = document.getElementById("input-costo-total");
 
-    let ctrlCosto = 0, ctrlPila = false;
     const inputTransponderId = document.getElementById("input-transponder-id");
 
     const campoLlaveVirgen = document.getElementById("campo-llave-virgen");
@@ -591,52 +590,30 @@ function renderSheet() {
       recalcularCosto();
     });
 
+    // El costo sale de calcularCostoDeTrabajo(), que trabaja con los datos del
+    // formulario y el inventario. Antes se armaba acá leyendo atributos del DOM,
+    // y el costo del control vivía en una variable que solo se llenaba al hacer
+    // clic: al abrir un trabajo guardado arrancaba en cero y el total perdía el
+    // control y la pila.
     function recalcularCosto() {
-      const espadinSel = !!(inputEspadinId?.value || selectEspadinFallback?.value);
-      // Sumar costo de llave virgen si está seleccionada
-      const lvCard = inputLlaveVirgenId?.value
-        ? content.querySelector(`[data-lv-id="${inputLlaveVirgenId.value}"]`)
-        : null;
-      const lvCosto = lvCard ? Number(lvCard.dataset.lvCosto || 0) : 0;
+      const form = document.getElementById("form-trabajo");
+      if (!form) return;
 
-      // Sumar costo del chip/transponder si está seleccionado
-      const trCard = inputTransponderId?.value
-        ? content.querySelector(`[data-tr-id="${inputTransponderId.value}"]`)
-        : null;
-      const trCosto = trCard ? Number(trCard.dataset.trCosto || 0) : 0;
+      const datos = readTrabajoForm(form);
+      if (inputCostoTotal) inputCostoTotal.value = calcularCostoDeTrabajo(datos, state.inventario);
 
-      // Si el espadín viene del inventario, se usa su costo real
-      const espCard = inputEspadinId?.value
-        ? content.querySelector(`[data-esp-id="${inputEspadinId.value}"]`)
-        : null;
-      const espCosto = espCard ? Number(espCard.dataset.espCosto || 0) : 0;
-
-      const base = calcularCostoAutomatico({
-        tipoServicio: selectTipoServicio?.value,
-        controlCosto: ctrlCosto,
-        controlUsaPila: ctrlPila,
-        espadinSeleccionado: espadinSel,
-        pincode: inputPincode?.value
-      });
-      if (inputCostoTotal) inputCostoTotal.value = base + lvCosto + trCosto + espCosto;
-
-      // Si un insumo elegido no tiene costo registrado en el stock, el total
-      // sale sin sumarle nada. Antes eso pasaba callado y el trabajo quedaba
-      // con un costo más bajo que el real.
+      // Avisar si un insumo elegido no tiene costo registrado: el total sale
+      // sin sumarle nada y antes eso pasaba callado.
       const aviso = document.getElementById("aviso-sin-costo");
       if (!aviso) return;
 
-      const nombreDe = (tarjeta) => tarjeta?.querySelector(".inv-selector-name")?.textContent?.trim();
-      const ctrlCard = inputControlId?.value
-        ? content.querySelector(`[data-ctrl-id="${inputControlId.value}"]`)
-        : null;
-
+      const buscar = (id) => (id ? state.inventario.find((p) => p.id === id) : null);
       const sinCosto = [
-        inputControlId?.value      && !ctrlCosto ? nombreDe(ctrlCard) : null,
-        inputTransponderId?.value  && !trCosto   ? nombreDe(trCard)   : null,
-        inputLlaveVirgenId?.value  && !lvCosto   ? nombreDe(lvCard)   : null,
-        inputEspadinId?.value      && !espCosto  ? nombreDe(espCard)  : null
-      ].filter(Boolean);
+        buscar(datos.controlId),
+        buscar(datos.transponderInvId),
+        buscar(datos.llaveVirgenId),
+        buscar(datos.espadinId)
+      ].filter((p) => p && !(Number(p.costoUnitario) || 0)).map((p) => p.nombre);
 
       aviso.classList.toggle("hidden", !sinCosto.length);
       aviso.innerHTML = sinCosto.length
@@ -654,13 +631,10 @@ function renderSheet() {
         });
         if (yaSeleccionado) {
           if (inputControlId) inputControlId.value = "";
-          ctrlCosto = 0; ctrlPila = true;
         } else {
           card.classList.add("selected");
           card.insertAdjacentHTML("beforeend", `<i class="ti ti-check inv-selector-check"></i>`);
           if (inputControlId) inputControlId.value = card.dataset.ctrlId;
-          ctrlCosto = Number(card.dataset.ctrlCosto || 0);
-          ctrlPila = card.dataset.ctrlPila !== "0";
           // Actualizar el label del desplegable y cerrarlo
           const label = document.getElementById("label-control-sel");
           if (label) label.textContent = card.querySelector(".inv-selector-name")?.textContent || "Control seleccionado";

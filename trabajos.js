@@ -111,18 +111,40 @@ export function renderTrabajosView(state) {
   `;
 }
 
-// Calcula el costo automático sumando control + pila (si corresponde) + espadín + pincode.
-// Los valores de la pila y del espadín se configuran desde "Configuración del taller".
-export function calcularCostoAutomatico({ tipoServicio, controlCosto, controlUsaPila, espadinSeleccionado, pincode }) {
+/**
+ * Costo de un trabajo a partir de sus datos y del inventario.
+ *
+ * Es la única fuente de verdad del cálculo. Antes se armaba dentro del
+ * formulario leyendo atributos del DOM, y el costo del control vivía en una
+ * variable que solo se llenaba al hacer clic en la tarjeta: al abrir un trabajo
+ * ya guardado (editar o duplicar) esa variable arrancaba en cero y el recálculo
+ * le borraba al total el control y la pila.
+ *
+ *   control + chip + llave virgen  → costo unitario del producto
+ *   espadín del inventario         → su costo unitario
+ *   espadín del catálogo           → el valor fijo configurado en el taller
+ *   pila CR2032                    → solo si el control la usa y el servicio no está exento
+ */
+export function calcularCostoDeTrabajo(data, inventario = []) {
+  const buscar = (id) => (id ? inventario.find(p => p.id === id) : null);
+  const costoDe = (prod) => Number(prod?.costoUnitario) || 0;
+
+  const control = buscar(data.controlId);
+  const espadin = buscar(espadinIdDe(data, inventario));
+
   let total = 0;
-  total += Number(controlCosto) || 0;
-  if (controlUsaPila && !SERVICIOS_SIN_PILA.includes(tipoServicio)) {
+  total += costoDe(control);
+  total += costoDe(buscar(data.transponderInvId));
+  total += costoDe(buscar(data.llaveVirgenId));
+
+  if (espadin) total += costoDe(espadin);
+  else if (data.espadinCodigo) total += getPrecioEspadin();
+
+  if (control?.usaPila && !SERVICIOS_SIN_PILA.includes(data.tipoServicio)) {
     total += getPrecioPila();
   }
-  if (espadinSeleccionado) {
-    total += getPrecioEspadin();
-  }
-  total += Number(pincode) || 0;
+
+  total += Number(data.pincode) || 0;
   return total;
 }
 

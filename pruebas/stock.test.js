@@ -116,5 +116,55 @@ await ajustarStockTrabajo(UID, inv(), { antes: original, despues: { ...original,
 const { escrituras: e } = await import("./firebase.js");
 chequear("escrituras al cambiar de control (2 productos)", e, 2);
 
+
+// ============================================================
+// Costo del trabajo: control y pila no se pueden perder
+// ============================================================
+// El caso real que lo destapó: RAV4 2014 con control de $5.900 (usa pila),
+// chip de $2.000 y espadín del catálogo. El total salía $2.300 — solo chip
+// más espadín — porque el costo del control vivía en una variable del
+// formulario que arrancaba en cero al abrir un trabajo ya guardado.
+console.log("\n═══ Costo del trabajo ═══\n");
+{
+  const { calcularCostoDeTrabajo } = await import("./trabajos.js");
+  bd.inventario.clear();
+  for (const p of [
+    { id:"ctrl", nombre:"XKTO21EN (2 boton)", categoria:"Control Xhorse", stock:4, usaPila:true, costoUnitario:5900 },
+    { id:"chip", nombre:"Super chip",         categoria:"CHIP",           stock:10, costoUnitario:2000 },
+    { id:"esp",  nombre:"TOY43R",             categoria:"Espadín",        stock:9,  costoUnitario:1200 },
+    { id:"sinC", nombre:"Control sin costo",  categoria:"Control Xhorse", stock:2, usaPila:true, costoUnitario:0 }
+  ]) bd.inventario.set(p.id, p);
+  const inventario = [...bd.inventario.values()];
+
+  const caso = {
+    controlId:"ctrl", transponderInvId:"chip", espadinCodigo:"TOY43",
+    espadinId:"", llaveVirgenId:"", pincode:0, tipoServicio:"Duplicado"
+  };
+  // 5900 control + 2000 chip + 300 espadín de catálogo + 1000 pila
+  chequear("control + chip + espadín catálogo + pila", calcularCostoDeTrabajo(caso, inventario), 9200);
+
+  // El espadín del inventario suma su costo real, no el fijo de $300
+  chequear("espadín del inventario usa su costo",
+    calcularCostoDeTrabajo({ ...caso, espadinCodigo:"", espadinId:"esp" }, inventario), 5900 + 2000 + 1200 + 1000);
+
+  // "Llave simple" y "Apertura" no suman la pila
+  chequear("servicio sin pila no la suma",
+    calcularCostoDeTrabajo({ ...caso, tipoServicio:"Apertura" }, inventario), 9200 - 1000);
+
+  // Formato antiguo: el id del espadín venía dentro de espadinCodigo
+  chequear("espadín en formato antiguo usa su costo",
+    calcularCostoDeTrabajo({ ...caso, espadinCodigo:"esp" }, inventario), 5900 + 2000 + 1200 + 1000);
+
+  // El pincode comprado se suma tal cual
+  chequear("pincode se suma", calcularCostoDeTrabajo({ ...caso, pincode:15000 }, inventario), 9200 + 15000);
+
+  // Un control sin costo registrado no rompe el cálculo: aporta 0 pero la pila sigue
+  chequear("control sin costo suma solo la pila",
+    calcularCostoDeTrabajo({ ...caso, controlId:"sinC" }, inventario), 2000 + 300 + 1000);
+
+  // Sin ningún insumo, el costo es cero
+  chequear("trabajo sin insumos",
+    calcularCostoDeTrabajo({ controlId:"", transponderInvId:"", espadinCodigo:"", espadinId:"", llaveVirgenId:"", pincode:0, tipoServicio:"Duplicado" }, inventario), 0);
+}
 console.log(fallos === 0 ? "\n✅ TODAS LAS PRUEBAS PASARON\n" : `\n❌ ${fallos} PRUEBAS FALLARON\n`);
 process.exit(fallos ? 1 : 0);
